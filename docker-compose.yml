@@ -1,0 +1,37 @@
+services:
+  dosemu2:
+    build:
+      context: .
+      # Single switch between the two variants:
+      #   DOSEMU_VARIANT unset/empty → Dockerfile (Ubuntu PPA), image dosemu2:ppa
+      #   DOSEMU_VARIANT=git         → Dockerfile.git (Arch + upstream git),
+      #                                image dosemu2:git
+      # The same variable drives both the Dockerfile path and the image tag,
+      # so the two variants never overwrite each other.
+      dockerfile: Dockerfile${DOSEMU_VARIANT:+.${DOSEMU_VARIANT}}
+      args:
+        # Only consumed by Dockerfile.git; harmless for Dockerfile.
+        DOSEMU2_REF: ${DOSEMU2_REF:-devel}
+        DOSEMU2_REPO: ${DOSEMU2_REPO:-https://github.com/dosemu2/dosemu2.git}
+        # Empty = auto-detect via nproc at build time.
+        JOBS: ${JOBS:-}
+    image: ${DOSEMU_IMAGE:-dosemu2:${DOSEMU_VARIANT:-ppa}}
+    container_name: ${DOSEMU_CONTAINER:-dosemu2}
+    # dosemu is interactive and uses the terminal, so we need both a TTY
+    # and stdin attached. `docker compose run` honours these; `docker
+    # compose up` will not give you a usable shell.
+    stdin_open: true
+    tty: true
+    volumes:
+      # Source defaults to the named volume `dosemu-home`. Set DOSEMU_HOME
+      # in .env to a host path (e.g. ./dosemu-home) to use a bind mount
+      # instead. Either way it persists drive_c, config and boot.log.
+      - ${DOSEMU_HOME:-dosemu-home}:/home/dosuser/.dosemu
+    # Uncomment to give the container KVM acceleration. Requires /dev/kvm
+    # on the host (Linux with kvm_intel/kvm_amd loaded) and the invoking
+    # user in the `kvm` group. Without this, dosemu falls back to JIT.
+    # devices:
+    #   - /dev/kvm
+
+volumes:
+  dosemu-home:
