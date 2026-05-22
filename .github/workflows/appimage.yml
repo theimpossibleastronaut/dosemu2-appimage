@@ -1,0 +1,110 @@
+name: Build dosemu2 AppImage
+
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - 'AppRun'
+      - 'build-appimage.sh'
+      - 'docker-compose.yml'
+      - '.github/workflows/appimage.yml'
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'AppRun'
+      - 'build-appimage.sh'
+      - 'docker-compose.yml'
+      - '.github/workflows/appimage.yml'
+  workflow_dispatch:
+  schedule:
+    # Weekly check for new dosemu2 PPA versions. If the PPA hasn't moved,
+    # the release-action just updates the existing tag in place; if it
+    # has, a fresh release goes up with the new version's tag.
+    - cron: '30 11 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    env:
+      DOCKER_BUILD: "1"
+      WORKSPACE: ${{ github.workspace }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Pull linuxdeploy builder image
+        run: docker pull andy5995/linuxdeploy:v3-jammy
+
+      - name: Build AppImage
+        # HOSTUID/HOSTGID are auto-detected by the v3-jammy entrypoint
+        # from the bind-mounted workspace owner; no env var setup needed.
+        # VERSION is auto-detected from the installed dosemu2 deb.
+        run: docker compose run --rm build
+
+      - name: Resolve version + arch
+        run: |
+          ARCH=$(uname -m)
+          VERSION=$(cat out/DOSEMU2_VERSION)
+          DEB_VERSION=$(cat out/DOSEMU2_DEB_VERSION)
+          echo "ARCH=${ARCH}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "DEB_VERSION=${DEB_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Generate sha256sum
+        run: |
+          cd out
+          file=$(ls *.AppImage)
+          sha256sum "$file" > "$file.sha256sum"
+
+      - name: Upload AppImage artifact (PRs only)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: dosemu2-AppImage-${{ env.ARCH }}
+          path: ./out/*AppImage*
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.VERSION }}
+          name: dosemu2 ${{ env.VERSION }}
+          artifacts: "./out/*AppImage*"
+          body: |
+            AppImage build of [dosemu2](https://github.com/dosemu2/dosemu2)
+            `${{ env.DEB_VERSION }}` from the official Ubuntu PPA.
+
+            ## Usage
+
+            ```
+            chmod +x dosemu2-${{ env.VERSION }}-*.AppImage
+            ./dosemu2-${{ env.VERSION }}-*.AppImage
+            ```
+
+            ## Updating
+
+            If [appimageupdatetool](https://github.com/AppImageCommunity/AppImageUpdate)
+            is installed, the AppImage can update itself:
+
+            ```
+            appimageupdatetool dosemu2-*.AppImage
+            ```
+          allowUpdates: true
+          removeArtifacts: false
+          replacesArtifacts: true
+          omitBodyDuringUpdate: false
+          omitNameDuringUpdate: false
+          token: ${{ secrets.GITHUB_TOKEN }}

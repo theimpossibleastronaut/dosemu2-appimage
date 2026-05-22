@@ -1,0 +1,4 @@
+/.env
+
+# AppImage build output
+/out/
