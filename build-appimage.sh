@@ -111,7 +111,7 @@ fi
 # the main executable when it lives in /usr/libexec rather than /usr/bin.
 # The relative jumps are two levels deep because libexec/dosemu2/ is three
 # directories under usr (usr/libexec/dosemu2/dosemu2.bin → usr/lib/).
-patchelf --set-rpath '$ORIGIN/../../lib:$ORIGIN/../../lib/x86_64-linux-gnu' \
+patchelf --set-rpath '$ORIGIN/../../lib:$ORIGIN/../../lib/x86_64-linux-gnu:$ORIGIN/../../lib/aarch64-linux-gnu' \
   "$DOSEMU_BIN"
 # Plugin rpath gets fixed AFTER linuxdeploy runs (see below) — linuxdeploy
 # relies on the PPA's `/usr/lib/fdpp:...` rpath entries to find libfdpp.so
@@ -202,7 +202,11 @@ done
 ARCH=$(uname -m)
 OUT_APPIMAGE="dosemu2-$VERSION-$ARCH.AppImage"
 
-REPO="${GITHUB_REPOSITORY_NAME:-dosemu-appimage}"
+# GitHub Actions sets GITHUB_REPOSITORY to "owner/name" — strip the
+# owner so the zsync URL tracks whatever repo this is actually being
+# built in. Falls back to the current name for local builds.
+REPO="${GITHUB_REPOSITORY##*/}"
+REPO="${REPO:-dosemu2-appimage}"
 GITHUB_REPOSITORY_OWNER="${GITHUB_REPOSITORY_OWNER:-theimpossibleastronaut}"
 # zsync's update tag follows the release tag — which is just $VERSION now
 # that we publish one release per dosemu2 PPA version (no more snapshots).
