@@ -3,3 +3,7 @@
 # AppImage build output
 /out/
 /squashfs-root/
+
+# Cached game downloads — games/lib/build-game.sh stores upstream
+# archives here so re-runs don't refetch.
+/.game-cache/

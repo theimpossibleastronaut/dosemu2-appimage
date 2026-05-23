@@ -115,4 +115,8 @@ jobs:
           replacesArtifacts: true
           omitBodyDuringUpdate: false
           omitNameDuringUpdate: false
+          # Don't steal the "Latest" badge from the dosemu2 release
+          # (set in appimage.yml). mkdexe2 ships under a rolling tag
+          # that publishes more often than dosemu2 itself.
+          makeLatest: false
           token: ${{ secrets.GITHUB_TOKEN }}

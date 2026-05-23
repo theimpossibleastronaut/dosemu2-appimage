@@ -36,3 +36,20 @@ services:
       - ${PWD}:${WORKSPACE:-/workspace}
     working_dir: ${WORKSPACE:-/workspace}
     command: "./mkdexe2/build-mkdexe2-appimage.sh"
+
+  build-game:
+    # Builds an AppImage of a specific DOS game by running the recipe
+    # at games/recipes/$GAME.sh inside the linuxdeploy container.
+    # Usage: GAME=wolf3d-shareware docker compose run --rm build-game
+    environment:
+      HOSTUID: ${HOSTUID:-}
+      HOSTGID: ${HOSTGID:-}
+      WORKSPACE: ${WORKSPACE:-/workspace}
+      DOCKER_BUILD: "1"
+      GAME: "${GAME:?GAME=<recipe-short-name> is required (see games/recipes/)}"
+      GITHUB_REPOSITORY_OWNER: ${GITHUB_REPOSITORY_OWNER:-theimpossibleastronaut}
+    image: andy5995/linuxdeploy:v3-jammy
+    volumes:
+      - ${PWD}:${WORKSPACE:-/workspace}
+    working_dir: ${WORKSPACE:-/workspace}
+    command: "./games/build-game.sh"

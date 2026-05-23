@@ -1,16 +1,22 @@
 # dosemu2 AppImage
 
-Two AppImages, both produced from this repo:
+Three kinds of AppImage are produced from this repo:
 
 1. **`dosemu2-<version>-<arch>.AppImage`** —
    [dosemu2](https://github.com/dosemu2/dosemu2) itself, the DOS
    virtual machine. Download, `chmod +x`, run. No PPA, no distro
-   deps. Tagged by the upstream version it wraps (e.g. `2.0pre9`).
+   deps. Tagged by the upstream version it wraps (e.g. `2.0pre9`)
+   and always marked as the repo's "Latest" release.
 2. **`mkdexe2-<sha>-<arch>.AppImage`** —
    [mkdexe2](https://github.com/dosemu2/mkdexe2), a tool that wraps
    a DOS program directory into its own runnable AppImage. The
    wrapped game AppImages launch under whatever dosemu2 you have on
    your host (e.g. #1 above symlinked into `~/.local/bin/dosemu`).
+3. **`org.dosemu2.<Game>-<arch>.AppImage`** — pre-wrapped DOS games,
+   one per release tag (`game-<short-name>`). Only games whose
+   copyright holders have explicitly licensed free redistribution
+   qualify; see [games/README.md](games/README.md) for the policy
+   and how to add a new recipe.
 
 Upstream projects:
 - dosemu2: <https://github.com/dosemu2/dosemu2>
@@ -46,8 +52,9 @@ The same builds the GitHub Actions workflows run can be reproduced on
 any host with Docker:
 
 ```sh
-docker compose run --rm build           # produces dosemu2-*.AppImage
-docker compose run --rm build-mkdexe2   # produces mkdexe2-*.AppImage
+docker compose run --rm build                                  # dosemu2-*.AppImage
+docker compose run --rm build-mkdexe2                          # mkdexe2-*.AppImage
+GAME=wolf3d-shareware docker compose run --rm build-game       # org.dosemu2.<Game>-*.AppImage
 ```
 
 Finished `.AppImage` files land in `out/`. The dosemu2 build is
