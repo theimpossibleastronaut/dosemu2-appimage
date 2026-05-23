@@ -35,14 +35,15 @@ cd "$WORKSPACE"
 # ---------------------------------------------------------------------------
 
 sudo DEBIAN_FRONTEND=noninteractive sh -c '
-  apt-get update && \
-  apt-get install -y --no-install-recommends \
-      software-properties-common ca-certificates gnupg \
-      imagemagick patchelf file && \
   add-apt-repository -y ppa:dosemu2/ppa && \
-  apt-get update && \
   apt-get install -y --no-install-recommends dosemu2 comcom32
 '
+# `software-properties-common` (for add-apt-repository), `gnupg` (for the
+# PPA key import), `imagemagick` (for the XPM → PNG icon conversion),
+# `patchelf`, `file`, `ca-certificates`, and `gpg` are all pre-installed
+# in the linuxdeploy:v3-jammy helper image. add-apt-repository runs
+# apt-get update internally on modern Ubuntu, so no separate refresh
+# step is needed here.
 
 # ---------------------------------------------------------------------------
 # Resolve the AppImage version from the installed dosemu2 package
