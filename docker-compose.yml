@@ -1,5 +1,7 @@
 services:
   build:
+    # Builds the dosemu2 AppImage (the main artifact of this repo).
+    #
     # HOSTUID/HOSTGID are auto-detected by the v3-jammy entrypoint from
     # the bind-mounted workspace owner. Export them on the host only if
     # you need to override the default (e.g. CI matrix runs).
@@ -18,3 +20,19 @@ services:
     working_dir: ${WORKSPACE:-/workspace}
     # Absolute path or relative to workspace
     command: "${SCRIPT:-./build-appimage.sh}"
+
+  build-mkdexe2:
+    # Builds the mkdexe2 AppImage — a tool that wraps DOS games into
+    # their own AppImages. See mkdexe2/build-mkdexe2-appimage.sh.
+    environment:
+      HOSTUID: ${HOSTUID:-}
+      HOSTGID: ${HOSTGID:-}
+      VERSION: "${VERSION:-}"
+      WORKSPACE: ${WORKSPACE:-/workspace}
+      DOCKER_BUILD: "1"
+      GITHUB_REPOSITORY_OWNER: ${GITHUB_REPOSITORY_OWNER:-theimpossibleastronaut}
+    image: andy5995/linuxdeploy:v3-jammy
+    volumes:
+      - ${PWD}:${WORKSPACE:-/workspace}
+    working_dir: ${WORKSPACE:-/workspace}
+    command: "./mkdexe2/build-mkdexe2-appimage.sh"

@@ -1,0 +1,118 @@
+name: Build mkdexe2 AppImage
+
+# Wraps github.com/dosemu2/mkdexe2 — a shell script that turns a DOS
+# program directory into a runnable AppImage — into an AppImage
+# itself, so end users don't have to clone the upstream repo or
+# install bash deps separately.
+#
+# Independent of the main dosemu2 AppImage build (appimage.yml).
+# Mkdexe2 changes infrequently and is tiny; weekly cron is plenty.
+
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - 'mkdexe2/**'
+      - '.github/workflows/mkdexe2-appimage.yml'
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'mkdexe2/**'
+      - '.github/workflows/mkdexe2-appimage.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '45 6 * * 1'  # weekly, Mondays 06:45 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    env:
+      DOCKER_BUILD: "1"
+      WORKSPACE: ${{ github.workspace }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Pull linuxdeploy builder image
+        run: docker pull andy5995/linuxdeploy:v3-jammy
+
+      - name: Build mkdexe2 AppImage
+        run: docker compose run --rm build-mkdexe2
+
+      - name: Resolve version + arch
+        run: |
+          ARCH=$(uname -m)
+          VERSION=$(cat out/MKDEXE2_VERSION)
+          SHA=$(cat out/MKDEXE2_SHA)
+          echo "ARCH=${ARCH}"       >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "MKDEXE2_SHA=${SHA}" >> "$GITHUB_ENV"
+
+      - name: Generate sha256sum
+        run: |
+          cd out
+          file=$(ls mkdexe2-*.AppImage)
+          sha256sum "$file" > "$file.sha256sum"
+
+      - name: Upload AppImage artifact (PRs only)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mkdexe2-AppImage-${{ env.ARCH }}
+          path: ./out/mkdexe2-*
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: mkdexe2-latest
+          name: mkdexe2 ${{ env.VERSION }}
+          artifacts: "./out/mkdexe2-*"
+          body: |
+            AppImage build of
+            [dosemu2/mkdexe2](https://github.com/dosemu2/mkdexe2) at
+            upstream commit `${{ env.MKDEXE2_SHA }}`.
+
+            `mkdexe2` wraps a DOS program directory into a runnable
+            AppImage that launches the program under dosemu2. The
+            generated game AppImage assumes the user has dosemu2
+            installed on the host (e.g. the
+            [dosemu2 AppImage](../../releases/tag/snapshot) from this
+            repo symlinked into `~/.local/bin/dosemu`).
+
+            ## Usage
+
+            ```
+            chmod +x mkdexe2-*.AppImage
+            ./mkdexe2-*.AppImage -N Wolf3d \
+                                 -P ~/dos/games/wolf \
+                                 -E wolf3d.exe
+            # → org.dosemu2.Wolf3d-x86_64.AppImage
+            ```
+
+            See `./mkdexe2-*.AppImage` (no args) for all options.
+
+            ## Updating
+
+            ```
+            appimageupdatetool mkdexe2-*.AppImage
+            ```
+          allowUpdates: true
+          removeArtifacts: false
+          replacesArtifacts: true
+          omitBodyDuringUpdate: false
+          omitNameDuringUpdate: false
+          token: ${{ secrets.GITHUB_TOKEN }}

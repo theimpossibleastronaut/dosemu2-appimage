@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# AppRun for the mkdexe2 AppImage.
+#
+# The upstream `mkdexe` script expects to find an `AppDir/` directory
+# in its current working directory (the template it copies and
+# customizes per game). Inside this AppImage that template lives at
+# usr/share/mkdexe2/AppDir; we stage a writable tmp dir with a symlink
+# to it, cd there, and exec mkdexe with whatever args the user passed.
+#
+# Usage on the host (after this AppImage is downloaded + chmod +x'd):
+#   ./mkdexe2-<ver>-x86_64.AppImage -N Wolf3d -P ~/dos/games/wolf -E wolf3d.exe
+#   →  org.dosemu2.Wolf3d-x86_64.AppImage in cwd
+#
+# The output game AppImage assumes the user already has a working
+# dosemu2 on PATH (e.g. the dosemu2 AppImage from this same repo
+# symlinked into ~/.local/bin/dosemu). mkdexe2 deliberately does not
+# bundle dosemu2 itself — license-wise mixing dosemu2 (GPL-2.0) with
+# arbitrary game payloads is a redistribution risk, and dosemu2 is
+# meant to be a shared host runtime.
+
+set -e
+
+HERE="$(readlink -f "$(dirname "$0")")"
+ORIG_CWD="$PWD"
+
+# Working dir where mkdexe will assemble each game AppDir. Upstream
+# mkdexe uses `find AppDir` (without -L) to enumerate the template,
+# which means AppDir/ must be a real directory — a symlink wouldn't
+# be traversed. Cheap recursive copy; the template is tiny.
+WORKDIR="$(mktemp -d -t mkdexe2.XXXXXX)"
+trap 'rm -rf "$WORKDIR"' EXIT
+cp -a "$HERE/usr/share/mkdexe2/AppDir" "$WORKDIR/AppDir"
+cd "$WORKDIR"
+
+"$HERE/usr/bin/mkdexe" "$@"
+
+# Upstream mkdexe writes the produced game AppImage into the cwd
+# appimagetool was called from — which is this WORKDIR. Move any
+# *.AppImage outputs back to where the user invoked us, so the
+# trap-cleanup doesn't take the result with it.
+for f in "$WORKDIR"/*.AppImage; do
+  [ -e "$f" ] || continue
+  mv -v "$f" "$ORIG_CWD/"
+done
