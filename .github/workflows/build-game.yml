@@ -43,8 +43,11 @@ jobs:
         game:
           - wolf3d-shareware
         os:
+          # x86_64 only. DOS games are 16-bit x86 binaries by
+          # definition, and an arm64 wrapper would only run them
+          # through dosemu2's simx86 JIT (emulation on emulation).
+          # Add ubuntu-24.04-arm back if someone files a request.
           - ubuntu-24.04
-          - ubuntu-24.04-arm
     env:
       DOCKER_BUILD: "1"
       WORKSPACE: ${{ github.workspace }}
