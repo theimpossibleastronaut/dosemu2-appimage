@@ -110,6 +110,11 @@ APPIMAGE_NAME="org.dosemu2.${GAME_NAME}-${ARCH}.AppImage"
 
 (
   cd "$MKD_DIR"
+  # mkdexe upstream caches the appimagetool download under
+  # $XDG_RUNTIME_DIR/mkdexe; that variable is empty on GitHub
+  # runners, which resolves to "/mkdexe" — not writable as a
+  # non-root user. Point it at a writable tmp dir.
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$(mktemp -d)}"
   ./mkdexe -N "$GAME_NAME" -P "$STAGE_DIR" -E "$GAME_EXE" -C "$GAME_CATEGORY"
   mv "$APPIMAGE_NAME" "$OUT_DIR/"
 )
