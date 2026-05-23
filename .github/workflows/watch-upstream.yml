@@ -1,0 +1,86 @@
+name: Watch upstream dosemu2 releases
+
+# Poll the upstream dosemu2/dosemu2 releases API on a weekly schedule.
+# When a new release tag appears that we haven't already filed a tracking
+# issue for, open one here. Manual dispatch is provided for testing or
+# when you want an out-of-band check.
+#
+# Upstream releases are years apart (last one was 2.0pre9 in Jan 2022),
+# so weekly is plenty. If a release does land, the issue is a manual
+# nudge — review the release notes, decide whether to rebuild the
+# AppImage (the AppImage workflow's own weekly cron will pick the
+# corresponding PPA bump up automatically next Monday anyway).
+
+on:
+  schedule:
+    - cron: '15 6 * * 1'  # weekly, Mondays 06:15 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check upstream release vs filed issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Latest published (non-draft) upstream release. Read each
+          # field with its own jq call so titles/names containing
+          # spaces survive.
+          tag=$(gh api repos/dosemu2/dosemu2/releases \
+                  --jq '[.[] | select(.draft==false)][0].tag_name')
+          name=$(gh api repos/dosemu2/dosemu2/releases \
+                   --jq '[.[] | select(.draft==false)][0].name')
+          html_url=$(gh api repos/dosemu2/dosemu2/releases \
+                       --jq '[.[] | select(.draft==false)][0].html_url')
+          published_at=$(gh api repos/dosemu2/dosemu2/releases \
+                           --jq '[.[] | select(.draft==false)][0].published_at')
+
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "No published releases found upstream — nothing to do."
+            exit 0
+          fi
+
+          echo "Latest upstream release: $tag ($name, $published_at)"
+
+          # Search open OR closed issues for a title match — we don't
+          # want to re-file the same nudge if it was closed previously.
+          existing=$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state all \
+            --search "Upstream dosemu2 $tag in:title" \
+            --json number --jq 'length')
+
+          if [ "$existing" -gt 0 ]; then
+            echo "Tracking issue for $tag already exists — skipping."
+            exit 0
+          fi
+
+          body=$(cat <<EOF
+          Upstream [dosemu2/dosemu2]($html_url) published a new release:
+
+          - **Tag:** \`$tag\`
+          - **Name:** $name
+          - **Published:** $published_at
+          - **Release page:** $html_url
+
+          This AppImage repo tracks the dosemu2 PPA, which usually follows
+          upstream releases within a few days. The weekly AppImage rebuild
+          (Mondays 11:30 UTC) will pick up the new version automatically
+          once the PPA publishes it. If you want it sooner, trigger
+          \`Build dosemu2 AppImage\` manually from the Actions tab.
+
+          Close this issue once the AppImage has been published for \`$tag\`.
+          EOF
+          )
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Upstream dosemu2 $tag released" \
+            --body "$body"
