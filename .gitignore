@@ -2,3 +2,4 @@
 
 # AppImage build output
 /out/
+/squashfs-root/
