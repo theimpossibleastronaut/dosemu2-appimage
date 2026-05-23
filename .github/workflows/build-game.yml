@@ -22,23 +22,16 @@ on:
       - 'games/**'
       - '.github/workflows/build-game.yml'
   workflow_dispatch:
-    inputs:
-      game:
-        description: 'Recipe to build (empty = all)'
-        required: false
-        default: ''
   # Monthly rebuild so the games track the current mkdexe2 + appimagetool.
   schedule:
     - cron: '15 7 1 * *'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.game || 'all' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    # Skip non-matching recipes when dispatch targets a single game.
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.game == '' || inputs.game == matrix.game }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write

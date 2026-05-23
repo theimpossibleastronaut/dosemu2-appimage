@@ -46,7 +46,10 @@ services:
       HOSTGID: ${HOSTGID:-}
       WORKSPACE: ${WORKSPACE:-/workspace}
       DOCKER_BUILD: "1"
-      GAME: "${GAME:?GAME=<recipe-short-name> is required (see games/recipes/)}"
+      # Required at runtime; not enforced here because docker compose
+      # validates this entire file even when running unrelated services.
+      # build-game.sh aborts with a clear error if GAME is empty.
+      GAME: "${GAME:-}"
       GITHUB_REPOSITORY_OWNER: ${GITHUB_REPOSITORY_OWNER:-theimpossibleastronaut}
     image: andy5995/linuxdeploy:v3-jammy
     volumes:
