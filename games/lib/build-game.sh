@@ -58,6 +58,19 @@ CACHE_DIR="${CACHE_DIR:-$WORKSPACE/.game-cache}"
 mkdir -p "$OUT_DIR" "$CACHE_DIR"
 
 # --------------------------------------------------------------------------
+# 0. install the extraction tools recipes commonly need
+# --------------------------------------------------------------------------
+# linuxdeploy:v3-jammy doesn't ship these. Cheap to install per run
+# (~3s); promote to the helper image if it becomes annoying.
+need_install=()
+command -v unzip >/dev/null || need_install+=(unzip)
+command -v 7z    >/dev/null || need_install+=(p7zip-full)
+if [ ${#need_install[@]} -gt 0 ]; then
+  sudo apt-get update -qq
+  sudo apt-get install -y --no-install-recommends "${need_install[@]}"
+fi
+
+# --------------------------------------------------------------------------
 # 1. fetch
 # --------------------------------------------------------------------------
 ARCHIVE_PATH="$CACHE_DIR/$GAME_ARCHIVE"
