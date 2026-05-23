@@ -13,14 +13,12 @@ name: Build game AppImage
 on:
   push:
     branches: [trunk]
-    paths:
+    paths: &p
       - 'games/**'
       - '.github/workflows/build-game.yml'
   pull_request:
     branches: [trunk]
-    paths:
-      - 'games/**'
-      - '.github/workflows/build-game.yml'
+    paths: *p
   workflow_dispatch:
   # Monthly rebuild so the games track the current mkdexe2 + appimagetool.
   schedule:

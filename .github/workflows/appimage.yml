@@ -3,18 +3,16 @@ name: Build dosemu2 AppImage
 on:
   push:
     branches: [trunk]
-    paths:
+    # docker-compose.yml is shared with mkdexe2 / build-game services
+    # and changes there shouldn't force a dosemu2 rebuild; intentionally
+    # left out.
+    paths: &p
       - 'AppRun'
       - 'build-appimage.sh'
-      - 'docker-compose.yml'
       - '.github/workflows/appimage.yml'
   pull_request:
     branches: [trunk]
-    paths:
-      - 'AppRun'
-      - 'build-appimage.sh'
-      - 'docker-compose.yml'
-      - '.github/workflows/appimage.yml'
+    paths: *p
   workflow_dispatch:
   schedule:
     # Weekly check for new dosemu2 PPA versions. If the PPA hasn't moved,
