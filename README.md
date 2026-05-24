@@ -31,6 +31,9 @@ itself in place when a newer release is published:
 appimageupdatetool dosemu2-*.AppImage
 ```
 
+If your distro doesn't package it, [AM](https://github.com/ivan-hc/AM)
+can install it (`am -i appimageupdatetool`).
+
 ## Build locally
 
 The same builds the GitHub Actions workflows run can be reproduced on
