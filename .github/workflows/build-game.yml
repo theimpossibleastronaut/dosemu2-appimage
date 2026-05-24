@@ -43,6 +43,7 @@ jobs:
           - keen1-shareware
           - mgolf3d
           - floatris
+          - raptor-shareware
         os:
           # x86_64 only. DOS games are 16-bit x86 binaries by
           # definition, and an arm64 wrapper would only run them
