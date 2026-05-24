@@ -7,3 +7,8 @@
 # Cached game downloads — games/lib/build-game.sh stores upstream
 # archives here so re-runs don't refetch.
 /.game-cache/
+
+# Stray log file dosemu2 sometimes drops when the -no-priv-sep CLI
+# flag from mkdexe2's AppRun ends up being parsed as a filename
+# under certain invocations. Filed against dosemu2 separately.
+/-priv-sep
