@@ -105,9 +105,4 @@ jobs:
           replacesArtifacts: true
           omitBodyDuringUpdate: false
           omitNameDuringUpdate: false
-          # dosemu2 is the original purpose of this repo — keep it
-          # pinned as the page's "Latest" release no matter what
-          # other workflows (mkdexe2-latest, game wrappers) publish
-          # in between.
-          makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,26 +1,11 @@
 # dosemu2 AppImage
 
-Three kinds of AppImage are produced from this repo:
+A single-file [AppImage](https://appimage.org/) of
+[dosemu2](https://github.com/dosemu2/dosemu2) — a virtual machine that
+runs DOS programs under Linux. Download one file, `chmod +x`, run; no
+installation, no PPA, no distro dependencies.
 
-1. **`dosemu2-<version>-<arch>.AppImage`** —
-   [dosemu2](https://github.com/dosemu2/dosemu2) itself, the DOS
-   virtual machine. Download, `chmod +x`, run. No PPA, no distro
-   deps. Tagged by the upstream version it wraps (e.g. `2.0pre9`)
-   and always marked as the repo's "Latest" release.
-2. **`mkdexe2-<sha>-<arch>.AppImage`** —
-   [mkdexe2](https://github.com/dosemu2/mkdexe2), a tool that wraps
-   a DOS program directory into its own runnable AppImage. The
-   wrapped game AppImages launch under whatever dosemu2 you have on
-   your host (e.g. #1 above symlinked into `~/.local/bin/dosemu`).
-3. **`org.dosemu2.<Game>-<arch>.AppImage`** — pre-wrapped DOS games,
-   one per release tag (`game-<short-name>`). Only games whose
-   copyright holders have explicitly licensed free redistribution
-   qualify; see [games/README.md](games/README.md) for the policy
-   and how to add a new recipe.
-
-Upstream projects:
-- dosemu2: <https://github.com/dosemu2/dosemu2>
-- mkdexe2: <https://github.com/dosemu2/mkdexe2>
+Upstream project: <https://github.com/dosemu2/dosemu2>
 
 ## Download
 
@@ -52,46 +37,16 @@ The same builds the GitHub Actions workflows run can be reproduced on
 any host with Docker:
 
 ```sh
-docker compose run --rm build                                  # dosemu2-*.AppImage
-docker compose run --rm build-mkdexe2                          # mkdexe2-*.AppImage
-GAME=wolf3d-shareware docker compose run --rm build-game       # org.dosemu2.<Game>-*.AppImage
+docker compose run --rm build
 ```
 
-Finished `.AppImage` files land in `out/`. The dosemu2 build is
-labelled with whatever version the PPA currently ships (e.g.
-`dosemu2-2.0pre9-x86_64.AppImage`); the mkdexe2 build is labelled
-with upstream's git short SHA (e.g. `mkdexe2-git-abcd123-x86_64.AppImage`).
-Both run inside `andy5995/linuxdeploy:v3-jammy` and auto-detect host
-UID/GID from the bind-mounted workspace owner. Override with
-`VERSION=...`, `HOSTUID=$(id -u)`, or `HOSTGID=$(id -g)` before
-running compose.
-
-## Using mkdexe2
-
-```sh
-# Download the tool AppImage
-wget https://github.com/theimpossibleastronaut/dosemu2-appimage/releases/download/mkdexe2-latest/mkdexe2-git-<sha>-x86_64.AppImage
-chmod +x mkdexe2-*.AppImage
-
-# Wrap a DOS game directory into its own AppImage
-./mkdexe2-*.AppImage -N Wolf3d \
-                     -P ~/dos/games/wolf \
-                     -E wolf3d.exe
-# → org.dosemu2.Wolf3d-x86_64.AppImage in cwd
-```
-
-The generated game AppImage assumes dosemu2 is available on `PATH`
-(`dosemu` invokable). If you don't have a system dosemu2, the easiest
-path is to symlink the dosemu2 AppImage from this same repo:
-
-```sh
-ln -sf ~/Downloads/dosemu2-2.0pre9-x86_64.AppImage ~/.local/bin/dosemu
-```
-
-mkdexe2 deliberately does not bundle dosemu2 inside game AppImages —
-license-wise mixing dosemu2 (GPL-2.0) with arbitrary game payloads is
-a redistribution risk, and dosemu2 is meant to live once on a host
-and be shared.
+The finished `.AppImage` lands in `out/`, labelled with whatever
+dosemu2 version the PPA currently ships (e.g.
+`dosemu2-2.0pre9-x86_64.AppImage`). The build runs inside
+`andy5995/linuxdeploy:v3-jammy` and auto-detects host UID/GID from
+the bind-mounted workspace owner, so the resulting files are owned by
+you. To override the version label or UID/GID, export `VERSION=...`,
+`HOSTUID=$(id -u)`, or `HOSTGID=$(id -g)` before running compose.
 
 ## How it works
 
