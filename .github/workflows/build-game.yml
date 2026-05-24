@@ -45,6 +45,7 @@ jobs:
           - floatris
           - raptor-shareware
           - epic-pinball-android
+          - doom1-shareware
         os:
           # x86_64 only. DOS games are 16-bit x86 binaries by
           # definition, and an arm64 wrapper would only run them
