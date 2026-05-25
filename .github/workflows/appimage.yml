@@ -3,9 +3,6 @@ name: Build dosemu2 AppImage
 on:
   push:
     branches: [trunk]
-    # docker-compose.yml is shared with mkdexe2 / build-game services
-    # and changes there shouldn't force a dosemu2 rebuild; intentionally
-    # left out.
     paths: &p
       - 'AppRun'
       - 'build-appimage.sh'
@@ -14,11 +11,6 @@ on:
     branches: [trunk]
     paths: *p
   workflow_dispatch:
-  schedule:
-    # Weekly check for new dosemu2 PPA versions. If the PPA hasn't moved,
-    # the release-action just updates the existing tag in place; if it
-    # has, a fresh release goes up with the new version's tag.
-    - cron: '30 11 * * 1'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
