@@ -32,7 +32,7 @@ jobs:
       WORKSPACE: ${{ github.workspace }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Pull linuxdeploy builder image
         run: docker pull andy5995/linuxdeploy:v3-jammy
