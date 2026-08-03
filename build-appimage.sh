@@ -209,9 +209,18 @@ OUT_APPIMAGE="dosemu2-$VERSION-$ARCH.AppImage"
 REPO="${GITHUB_REPOSITORY##*/}"
 REPO="${REPO:-dosemu2-appimage}"
 GITHUB_REPOSITORY_OWNER="${GITHUB_REPOSITORY_OWNER:-theimpossibleastronaut}"
-# zsync's update tag follows the release tag — which is just $VERSION now
-# that we publish one release per dosemu2 PPA version (no more snapshots).
-UPINFO="gh-releases-zsync|$GITHUB_REPOSITORY_OWNER|$REPO|$VERSION|*$ARCH.AppImage.zsync"
+# "latest", not $VERSION: gh-releases-zsync treats the literal string
+# "latest" as "resolve against whatever GitHub currently marks as the
+# Latest Release", regardless of that release's actual tag name. An
+# AppImage bakes this string in at build time and can never change it
+# on a copy a user already has, so pinning it to a specific tag (e.g.
+# $VERSION) only keeps working for as long as every future build
+# reuses that exact tag. If $VERSION ever varies release to release —
+# e.g. a future switch to building from a pinned dosemu2 git commit,
+# where the version string tracks the commit — a tag-pinned UPINFO
+# would silently stop finding updates for anyone already holding an
+# older build, with no error surfaced to them.
+UPINFO="gh-releases-zsync|$GITHUB_REPOSITORY_OWNER|$REPO|latest|*$ARCH.AppImage.zsync"
 
 appimagetool \
   --comp zstd \
