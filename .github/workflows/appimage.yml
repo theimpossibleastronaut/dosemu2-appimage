@@ -45,6 +45,9 @@ env:
 
 jobs:
   build:
+    # Without an explicit name the job label carries the whole base-image
+    # digest and is unreadable in the Actions sidebar.
+    name: build-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -54,10 +57,12 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
+            arch: amd64
             base: archlinux:latest
           # Official Arch is x86_64-only. Keep this digest in step with
           # appimage-build-image.yml, which builds the published image.
           - os: ubuntu-24.04-arm
+            arch: arm64
             base: lopsided/archlinux@sha256:63c8d3c53f643ff81241058f30f26b1fc5debea807c1b326e3f85814eac87d37
     steps:
       - name: Checkout

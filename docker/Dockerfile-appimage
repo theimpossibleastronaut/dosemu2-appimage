@@ -45,6 +45,14 @@ RUN pacman -Syu --noconfirm --needed \
         vde2 \
         libx11 \
         libxext \
+        # Without these the X (needs both mkfontdir and bdftopcf to build
+        # its fonts), libao and ieee1284 plugins each die in configure and
+        # never reach the bundle. munt is the one optional plugin still
+        # left out: libmt32emu is AUR-only.
+        xorg-mkfontscale \
+        xorg-bdftopcf \
+        libao \
+        libieee1284 \
         sdl3 \
         sdl3_ttf \
         fontconfig \

@@ -48,11 +48,19 @@ DOSEMU2_COMMIT=$(git rev-parse HEAD)
 make -j"$(nproc)"
 make install
 
-# VERSION labels the output filename -- derived from dosemu2's own
-# getversion (the same rich string dosemu2-container embeds), not the
-# release tag. The GitHub release itself always stays tagged "latest"
-# (see UPINFO below); only the asset filename varies per pinned commit.
+# VERSION comes from dosemu2's own getversion (the same rich string
+# dosemu2-container embeds), not from a release tag -- the GitHub release
+# always stays tagged "latest" (see UPINFO below).
 VERSION=$(./getversion)
+
+# The filename uses a shortened form: getversion produces
+# "2.0pre9-dev-20260806-4883-g604ce0cdd", and at that length GitHub's
+# release page truncates the asset name before the arch, which is the
+# one part a person picking a download actually needs. Cutting the date
+# and commit-count leaves "2.0pre9-dev-g604ce0cdd", and the arch goes
+# ahead of it rather than last, so it survives any future growth. The
+# full VERSION still labels the release itself.
+VERSION_SHORT=$(printf '%s\n' "$VERSION" | sed -E 's/-[0-9]{8}-[0-9]+-g/-g/')
 
 # --- bundle with sharun and pack the AppImage ------------------------------
 cd "$WORKSPACE"
@@ -105,7 +113,7 @@ export APPDIR
 export ICON="$WORKSPACE/dosemu.png"
 export DESKTOP="$WORKSPACE/dosemu2.desktop"
 export OUTPATH
-export OUTNAME="dosemu2-$VERSION-$ARCH.AppImage"
+export OUTNAME="dosemu2-$ARCH-$VERSION_SHORT.AppImage"
 # dosemu2's SDL3 plugin renders accelerated by default; keep OpenGL in
 # the bundle (same reasoning as Dealer's Choice's AnyLinux build).
 export DEPLOY_OPENGL=1
@@ -117,7 +125,9 @@ export DEPLOY_OPENGL=1
 # single rolling "latest" release (no separate snapshot/prerelease
 # stream), updated only when DOSEMU2_REF is deliberately bumped, so
 # "latest" here always means the current pinned build.
-export UPINFO="gh-releases-zsync|theimpossibleastronaut|dosemu2-appimage|latest|*$ARCH.AppImage.zsync"
+# The glob has to be *$ARCH*, not *$ARCH: the arch sits in the middle of
+# the filename now, not at the end.
+export UPINFO="gh-releases-zsync|theimpossibleastronaut|dosemu2-appimage|latest|*$ARCH*.AppImage.zsync"
 
 # dj64dev's runtime sysroot is where dosemu2's dj64 plugin looks for
 # crt0.elf at *every* dj64 program launch (stub.c: open(CRT0, ...), CRT0
@@ -143,6 +153,7 @@ export PATH_MAPPING="
   /usr/share/dosemu:\${SHARUN_DIR}/share/dosemu
   /usr/share/comcom64:\${SHARUN_DIR}/share/comcom64
   /usr/share/fdpp:\${SHARUN_DIR}/share/fdpp
+  /usr/lib/ao:\${SHARUN_DIR}/share/ao
 "
 mkdir -p "$APPDIR/i386-pc-dj64/lib" "$APPDIR/share/fonts"
 cp -v "$DJ64_SYSROOT/lib/crt0.elf" "$APPDIR/i386-pc-dj64/lib/crt0.elf"
@@ -157,6 +168,12 @@ cp -av /usr/share/dosemu /usr/share/comcom64 /usr/share/fdpp "$APPDIR/share/"
 # point fontconfig at them with a self-contained config; FONTCONFIG_FILE
 # is set below in the AppDir's .env.
 cp -av /usr/share/fonts/oldschool "$APPDIR/share/fonts/oldschool"
+
+# libao dlopens its output backends (alsa, pulse, oss) from a compiled-in
+# plugin dir rather than linking them, so an unbundled dir leaves the
+# libao plugin loading with no way to reach a sound device: "libao:
+# unable to open output device" on every start.
+cp -av /usr/lib/ao "$APPDIR/share/ao"
 
 # ladspa's filter.so is dlopen()'d by dosemu2's sound-effects plugin
 # through the LADSPA SDK's own loader, which searches $LADSPA_PATH (set
