@@ -6,10 +6,9 @@ name: Watch upstream dosemu2 releases
 # when you want an out-of-band check.
 #
 # Upstream releases are years apart (last one was 2.0pre9 in Jan 2022),
-# so weekly is plenty. If a release does land, the issue is a manual
-# nudge — review the release notes, decide whether to rebuild the
-# AppImage (the AppImage workflow's own weekly cron will pick the
-# corresponding PPA bump up automatically next Monday anyway).
+# so weekly is plenty. Nothing rebuilds the AppImage on its own, so the
+# issue is a manual nudge: review the release notes, then dispatch
+# `Build dosemu2 AppImage` with the tag you want published.
 
 on:
   schedule:
@@ -70,11 +69,11 @@ jobs:
           - **Published:** $published_at
           - **Release page:** $html_url
 
-          This AppImage repo tracks the dosemu2 PPA, which usually follows
-          upstream releases within a few days. The weekly AppImage rebuild
-          (Mondays 11:30 UTC) will pick up the new version automatically
-          once the PPA publishes it. If you want it sooner, trigger
-          \`Build dosemu2 AppImage\` manually from the Actions tab.
+          This AppImage is built from source at whatever dosemu2 commit
+          the build was dispatched with, so nothing happens until someone
+          asks for it. To publish this release, run
+          \`Build dosemu2 AppImage\` from the Actions tab with
+          \`dosemu2_ref\` set to \`$tag\`.
 
           Close this issue once the AppImage has been published for \`$tag\`.
           EOF

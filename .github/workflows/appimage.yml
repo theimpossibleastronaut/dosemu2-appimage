@@ -1,56 +1,118 @@
 name: Build dosemu2 AppImage
 
+# Builds the AppImage from a *deliberately chosen* dosemu2 commit, never
+# automatically: dosemu2's devel branch moves constantly and a rebuild per
+# push would republish "latest" with untested upstream code. Dispatch this
+# workflow with the ref you want.
+#
+# Pushes and PRs build and smoke-test against DEFAULT_DOSEMU2_REF below,
+# so a broken build script is caught, and publish nothing.
+
 on:
+  workflow_dispatch:
+    inputs:
+      dosemu2_ref:
+        description: 'dosemu2 commit, tag or branch to build'
+        required: true
+        type: string
+      publish:
+        description: 'Publish to the "latest" release'
+        required: false
+        default: true
+        type: boolean
   push:
     branches: [trunk]
     paths: &p
-      - 'AppRun'
       - 'build-appimage.sh'
+      - 'dosemu2.desktop'
+      - 'dosemu.png'
+      - 'docker/Dockerfile-appimage'
       - '.github/workflows/appimage.yml'
   pull_request:
     branches: [trunk]
     paths: *p
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  # Only used by push/PR test builds, which publish nothing. A release
+  # always comes from the sha typed into the dispatch form. Keep this
+  # roughly current so the test builds exercise recent dosemu2.
+  DEFAULT_DOSEMU2_REF: 604ce0cdd1a71f657e2a2df623d216d5ab289313
+  BUILD_IMAGE: ghcr.io/theimpossibleastronaut/dosemu2-appimage-build-env:latest
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+      packages: read
     strategy:
       fail-fast: false
       matrix:
         os:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    env:
-      DOCKER_BUILD: "1"
-      WORKSPACE: ${{ github.workspace }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Pull linuxdeploy builder image
-        run: docker pull andy5995/linuxdeploy:v3-jammy
+      - name: Resolve dosemu2 ref
+        env:
+          INPUT_REF: ${{ inputs.dosemu2_ref }}
+        run: |
+          set -eu
+          ref="${INPUT_REF:-$DEFAULT_DOSEMU2_REF}"
+          # A ref reaches git and a docker -e flag, so keep it to the
+          # characters a git ref can legally contain.
+          case "$ref" in
+            *[!A-Za-z0-9._/-]*)
+              echo "Refusing suspicious dosemu2 ref: $ref" >&2; exit 1 ;;
+          esac
+          echo "DOSEMU2_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull build environment
+        run: docker pull "$BUILD_IMAGE"
 
       - name: Build AppImage
-        # HOSTUID/HOSTGID are auto-detected by the v3-jammy entrypoint
-        # from the bind-mounted workspace owner; no env var setup needed.
-        # VERSION is auto-detected from the installed dosemu2 deb.
-        run: docker compose run --rm build
+        # Runs as root inside the container: build-appimage.sh installs
+        # dosemu2 into the container's own /usr before bundling from it.
+        run: |
+          docker run --rm -u 0 \
+            -v "$GITHUB_WORKSPACE":/workspace -w /workspace \
+            -e DOSEMU2_REF -e WORKSPACE=/workspace \
+            "$BUILD_IMAGE" sh -c './build-appimage.sh'
+          sudo chown -R "$(id -u):$(id -g)" out
 
       - name: Resolve version + arch
         run: |
-          ARCH=$(uname -m)
-          VERSION=$(cat out/DOSEMU2_VERSION)
-          DEB_VERSION=$(cat out/DOSEMU2_DEB_VERSION)
-          echo "ARCH=${ARCH}" >> "$GITHUB_ENV"
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "DEB_VERSION=${DEB_VERSION}" >> "$GITHUB_ENV"
+          echo "ARCH=$(uname -m)" >> "$GITHUB_ENV"
+          echo "VERSION=$(cat out/DOSEMU2_VERSION)" >> "$GITHUB_ENV"
+          echo "DOSEMU2_COMMIT=$(cat out/DOSEMU2_COMMIT)" >> "$GITHUB_ENV"
+
+      - name: Smoke test
+        # Boots FreeDOS (fdpp) under the terminal video plugin and runs a
+        # DOS command, which exercises the parts most likely to break in a
+        # bundle: fdpp's kernel, comcom64/dj64's crt0, and dosemu2's own
+        # data dirs. --appimage-extract-and-run because GitHub runners
+        # have no FUSE.
+        run: |
+          cd out
+          chmod +x ./dosemu2-*.AppImage
+          APPIMAGE_EXTRACT_AND_RUN=1 ./dosemu2-*.AppImage \
+            -td -ks -E "ver" 2>&1 | tee smoke.log
+          grep -qi comcom smoke.log
+          ! grep -q "FDPP boot failed" smoke.log
+          rm -f smoke.log
 
       - name: Generate sha256sum
         run: |
@@ -58,30 +120,62 @@ jobs:
           file=$(ls *.AppImage)
           sha256sum "$file" > "$file.sha256sum"
 
-      - name: Upload AppImage artifact (PRs only)
-        if: github.event_name == 'pull_request'
+      - name: Upload AppImage artifact
         uses: actions/upload-artifact@v7
         with:
           name: dosemu2-AppImage-${{ env.ARCH }}
-          path: ./out/*AppImage*
+          path: ./out/*
           if-no-files-found: error
 
+  publish:
+    needs: build
+    # Dispatch only. Pushes and PRs build and smoke-test, so a broken
+    # build script is caught, but publishing "latest" stays a deliberate
+    # act with a chosen dosemu2 commit behind it.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish != false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download both arches
+        uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: dosemu2-AppImage-*
+          merge-multiple: true
+
+      - name: Resolve version
+        run: |
+          echo "VERSION=$(cat out/DOSEMU2_VERSION)" >> "$GITHUB_ENV"
+          echo "DOSEMU2_COMMIT=$(cat out/DOSEMU2_COMMIT)" >> "$GITHUB_ENV"
+
       - name: Publish release
-        if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ env.VERSION }}
-          name: dosemu2 ${{ env.VERSION }}
+          # A single rolling release, always tagged "latest" — the
+          # AppImage's baked-in zsync update URL resolves against
+          # whatever GitHub marks as the latest release, and installers
+          # that scrape /releases (An/AM's catalog entry, for one) take
+          # the newest asset with no prerelease filter. One stream keeps
+          # both of those pointing at the build that was actually tested.
+          tag: latest
+          name: dosemu2 AppImage (${{ env.VERSION }})
           artifacts: "./out/*AppImage*"
           body: |
-            AppImage build of [dosemu2](https://github.com/dosemu2/dosemu2)
-            `${{ env.DEB_VERSION }}` from the official Ubuntu PPA.
+            AppImage of [dosemu2](https://github.com/dosemu2/dosemu2),
+            built from source at commit
+            [`${{ env.DOSEMU2_COMMIT }}`](https://github.com/dosemu2/dosemu2/commit/${{ env.DOSEMU2_COMMIT }})
+            (`${{ env.VERSION }}`).
+
+            Runs on any Linux distribution, glibc or musl: the AppImage
+            bundles its own C library and dynamic loader
+            ([AnyLinux](https://github.com/pkgforge-dev/Anylinux-AppImages)).
 
             ## Usage
 
             ```
-            chmod +x dosemu2-${{ env.VERSION }}-*.AppImage
-            ./dosemu2-${{ env.VERSION }}-*.AppImage
+            chmod +x dosemu2-*.AppImage
+            ./dosemu2-*.AppImage
             ```
 
             ## Updating
@@ -93,8 +187,14 @@ jobs:
             appimageupdatetool dosemu2-*.AppImage
             ```
           allowUpdates: true
-          removeArtifacts: false
+          # The asset filename carries the dosemu2 version, so a new
+          # build never overwrites the previous one by name. Clear the
+          # release first, or old AppImages pile up and anything picking
+          # an asset by position (An/AM's `head -1`) gets a stale one.
+          # Safe only because this one job uploads every arch at once.
+          removeArtifacts: true
           replacesArtifacts: true
           omitBodyDuringUpdate: false
           omitNameDuringUpdate: false
+          makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
