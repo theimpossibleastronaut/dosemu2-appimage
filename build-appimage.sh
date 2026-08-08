@@ -1,240 +1,188 @@
-#!/bin/bash
-# Build a dosemu2 AppImage by installing the upstream PPA's `dosemu2` package
-# (plus its DOS-side deps) into a build container, staging the installed files
-# into an AppDir, and running linuxdeploy + appimagetool over it.
+#!/bin/sh
+
+# Build a truly-portable AppImage of dosemu2 using sharun + uruntime + DwarFS
+# (pkgforge-dev's AnyLinux method). It bundles the libc and dynamic linker, so
+# the result runs on any Linux distro (musl, very old glibc, ...).
 #
-# This script is meant to be run inside the andy5995/linuxdeploy:v3-jammy
-# container, via the top-level docker-compose.yml.
+# Meant to run inside docker/Dockerfile-appimage's build-env image (Arch base
+# + dosemu2's toolchain -- binutils, thunk_gen, fdpp, smallerc, djstub,
+# dj64dev, comcom64, libsearpc -- all prebuilt to /usr, see appimage.yml).
+# This script clones dosemu2 itself, builds it from source, installs it into
+# the system /usr, then bundles the installed binary with quick-sharun.
 
-set -ev
+set -eux
 
-# ---------------------------------------------------------------------------
-# Pre-flight checks
-# ---------------------------------------------------------------------------
+ARCH="$(uname -m)"
 
-if [ -z "$DOCKER_BUILD" ]; then
-  echo "This script is only meant to run inside the linuxdeploy build container."
-  echo "See docker-compose.yml."
-  exit 1
-fi
+# DOSEMU2_REF pins the exact dosemu2 commit/branch/tag this build is made
+# from -- set it explicitly (appimage.yml takes it as a workflow_dispatch
+# input) for a reproducible build; it only changes when you deliberately
+# pass a new one, not automatically on every dosemu2 upstream push.
+DOSEMU2_REF="${DOSEMU2_REF:?DOSEMU2_REF must be set (a dosemu2 commit, branch, or tag)}"
 
-if [[ "$WORKSPACE" != /* ]]; then
-  echo "WORKSPACE must be absolute."
-  exit 1
-fi
-test -d "$WORKSPACE"
+SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
 
-APPDIR=${APPDIR:-"/tmp/$USER-AppDir"}
-[ -d "$APPDIR" ] && rm -rf "$APPDIR"
-mkdir -v -p "$APPDIR"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+WORKSPACE="${WORKSPACE:-$SCRIPT_DIR}"
+APPDIR="${APPDIR:-/tmp/dosemu2-AppDir}"
+OUTPATH="$WORKSPACE/out"
 
+rm -rf "$APPDIR"
+mkdir -p "$APPDIR" "$OUTPATH"
+
+# --- clone + build dosemu2, install into the system /usr -------------------
+# Full (non-shallow) clone: getversion needs git history reachable so
+# `git describe` can produce the rich "2.0pre9-dev-DATE-N-gSHA" version
+# string; a shallow clone of just DOSEMU2_REF would make it fall back to
+# the bare VERSION file instead. --prefix=/usr (not the autotools default
+# /usr/local) matches every AUR PKGBUILD this toolchain is built from and
+# is what quick-sharun expects to bundle an installed app from.
+git clone https://github.com/dosemu2/dosemu2.git /tmp/dosemu2-src
+cd /tmp/dosemu2-src
+git checkout "$DOSEMU2_REF"
+DOSEMU2_COMMIT=$(git rev-parse HEAD)
+
+./autogen.sh
+./configure --prefix=/usr
+make -j"$(nproc)"
+make install
+
+# VERSION labels the output filename -- derived from dosemu2's own
+# getversion (the same rich string dosemu2-container embeds), not the
+# release tag. The GitHub release itself always stays tagged "latest"
+# (see UPINFO below); only the asset filename varies per pinned commit.
+VERSION=$(./getversion)
+
+# --- bundle with sharun and pack the AppImage ------------------------------
 cd "$WORKSPACE"
 
-# ---------------------------------------------------------------------------
-# Install dosemu2 from the upstream Ubuntu PPA
-# ---------------------------------------------------------------------------
+wget --retry-connrefused --tries=30 "$SHARUN" -O ./quick-sharun
+chmod +x ./quick-sharun
 
-sudo DEBIAN_FRONTEND=noninteractive sh -c '
-  add-apt-repository -y ppa:dosemu2/ppa && \
-  apt-get install -y --no-install-recommends dosemu2 comcom32
-'
-# `software-properties-common` (for add-apt-repository), `gnupg` (for the
-# PPA key import), `imagemagick` (for the XPM → PNG icon conversion),
-# `patchelf`, `file`, `ca-certificates`, and `gpg` are all pre-installed
-# in the linuxdeploy:v3-jammy helper image. add-apt-repository runs
-# apt-get update internally on modern Ubuntu, so no separate refresh
-# step is needed here.
+# Disable quick-sharun's automatic hardcoded-/usr/share-or-/usr/lib-path
+# binary patcher (_check_hardcoded_lib_dirs / _check_hardcoded_data_dirs).
+# It does a length-preserving `sed` substitution directly on compiled
+# binaries' raw bytes wherever it detects a literal "/usr/share/..." or
+# "/usr/lib/..." match. dosemu2's DOSEMUCMDS_DEFAULT (libdosemu2.so) is
+# not its own string -- it's computed at compile time as a POINTER
+# `sizeof(PREFIXDIR)` bytes into the *same* underlying "/usr/share/..."
+# literal libdosemu2.so also uses verbatim elsewhere (for comcom64's
+# default path), so the patcher's in-place byte rewrite of that shared
+# literal corrupts what the precomputed offset reads back (observed:
+# dosemu2 looking for ".../JRd_j/dosemu/dosemu2-cmds-0.3" instead of
+# ".../share/dosemu/dosemu2-cmds-0.3"). PATH_MAPPING above already
+# covers every /usr/share path dosemu2 needs redirected, so the
+# automatic patcher is both redundant and actively harmful here.
+sed -i '/^_check_hardcoded_lib_dirs$/d; /^_check_hardcoded_data_dirs$/d' ./quick-sharun
+# Same reasoning for the later bin-only patch loop (it would scan
+# dosemu2.bin itself for the same class of match); no-op its two
+# _patch_away_* calls but leave the unrelated bun/pyinstaller
+# interpreter-patch branch in that same loop alone.
+sed -i \
+  -e "s/_patch_away_usr_share_dir \"\$bin\" || :/:/" \
+  -e "s/_patch_away_usr_lib_dir \"\$bin\" || :/:/" \
+  ./quick-sharun
 
-# ---------------------------------------------------------------------------
-# Resolve the AppImage version from the installed dosemu2 package
-# ---------------------------------------------------------------------------
-#
-# By default the AppImage label / release tag mirrors the upstream dosemu2
-# version we just installed from the PPA — so e.g. "2.0pre9-1ppa9~jammy1"
-# becomes "2.0pre9". The full deb version is preserved separately for the
-# workflow to surface in release notes. Callers can still set VERSION in
-# the env to override (handy for local testing).
+export APPDIR
+export ICON="$WORKSPACE/dosemu.png"
+export DESKTOP="$WORKSPACE/dosemu2.desktop"
+export OUTPATH
+export OUTNAME="dosemu2-$VERSION-$ARCH.AppImage"
+# dosemu2's SDL3 plugin renders accelerated by default; keep OpenGL in
+# the bundle (same reasoning as Dealer's Choice's AnyLinux build).
+export DEPLOY_OPENGL=1
 
-DOSEMU2_DEB_VERSION=$(dpkg-query -W -f='${Version}' dosemu2)
-# Drop the Debian/PPA suffix ("-10134-a7002fd9f+...") and strip the
-# tilde Debian uses for pre-release ordering, so "2.0~pre9-1ppa..."
-# becomes "2.0pre9" — matching upstream's tagging convention and
-# producing a clean git/release tag.
-DOSEMU2_VERSION="${DOSEMU2_DEB_VERSION%%-*}"
-DOSEMU2_VERSION="${DOSEMU2_VERSION//\~/}"
+# gh-releases-zsync "latest" resolves against whatever GitHub currently
+# marks as the Latest Release, regardless of its actual tag name -- not
+# a fixed tag. An AppImage bakes this string in at build time and can
+# never change it on a copy a user already has. This repo publishes a
+# single rolling "latest" release (no separate snapshot/prerelease
+# stream), updated only when DOSEMU2_REF is deliberately bumped, so
+# "latest" here always means the current pinned build.
+export UPINFO="gh-releases-zsync|theimpossibleastronaut|dosemu2-appimage|latest|*$ARCH.AppImage.zsync"
 
-if [ -z "$VERSION" ]; then
-  VERSION="$DOSEMU2_VERSION"
-fi
-echo "Building AppImage for dosemu2 $DOSEMU2_DEB_VERSION (label: $VERSION)"
+# dj64dev's runtime sysroot is where dosemu2's dj64 plugin looks for
+# crt0.elf at *every* dj64 program launch (stub.c: open(CRT0, ...), CRT0
+# a path baked in at dj64dev's build time -- see docker/Dockerfile-appimage).
+# comcom64.exe/command.com (/usr/share/comcom64), fdpp's kernel
+# (/usr/share/fdpp), and dosemu2's own keymaps/codepages/command
+# utilities (/usr/share/dosemu, including the dosemu2-cmds-* dir
+# make install creates) are all real data dosemu2 looks up by compiled-in
+# /usr/share/... paths at runtime -- none of it is a library or ELF
+# executable, so quick-sharun's normal dependency-closure walk never
+# finds it to bundle automatically, and quick-sharun's binary-string
+# patcher only catches paths that appear as one complete literal in a
+# binary (some of these are assembled at runtime from separate
+# DATADIR-style pieces, so they never appear as a single matchable
+# string). PATH_MAPPING (an LD_PRELOAD path interceptor from
+# pkgforge-dev's pathmap) redirects the actual resolved path at runtime
+# regardless of how it was built, which is why it's used here instead of
+# relying on the automatic patcher; PATH_MAPPING only redirects lookups
+# though, so every directory it covers still has to be bundled by hand.
+DJ64_SYSROOT=/usr/i386-pc-dj64
+export PATH_MAPPING="
+  $DJ64_SYSROOT:\${SHARUN_DIR}/i386-pc-dj64
+  /usr/share/dosemu:\${SHARUN_DIR}/share/dosemu
+  /usr/share/comcom64:\${SHARUN_DIR}/share/comcom64
+  /usr/share/fdpp:\${SHARUN_DIR}/share/fdpp
+"
+mkdir -p "$APPDIR/i386-pc-dj64/lib" "$APPDIR/share/fonts"
+cp -v "$DJ64_SYSROOT/lib/crt0.elf" "$APPDIR/i386-pc-dj64/lib/crt0.elf"
+cp -av /usr/share/dosemu /usr/share/comcom64 /usr/share/fdpp "$APPDIR/share/"
 
-# ---------------------------------------------------------------------------
-# Stage dosemu2's installed files into the AppDir
-# ---------------------------------------------------------------------------
-#
-# The dosemu2 deb pulls fdpp, comcom64, dj64dev, and libdosemu2-0 as
-# dependencies. Enumerate the file lists of every dosemu2-related package
-# and copy them, preserving paths and symlinks. Skip docs/lintian/menu noise
-# that bloats the AppImage without doing anything useful.
+# dosemu2's SDL/SDL3 text mode wants the two "oldschool" TTF fonts it
+# installs to $datadir/fonts/oldschool, and looks them up by fontconfig
+# *family name* ($_SDL_fonts, default "Flexi IBM VGA False, Flexi IBM VGA
+# True") rather than by path -- and it rejects a substitute font, so an
+# unbundled font is a hard failure of the SDL text plugin, not a downgrade
+# (see sdl_load_font() in src/plugin/sdl3/sdl.c). Bundle the fonts and
+# point fontconfig at them with a self-contained config; FONTCONFIG_FILE
+# is set below in the AppDir's .env.
+cp -av /usr/share/fonts/oldschool "$APPDIR/share/fonts/oldschool"
 
-DOSEMU_PKGS=$(dpkg-query -W -f='${Package}\n' \
-  | grep -E '^(dosemu2|libdosemu2|fdpp|comcom32|comcom64|dj64|djdev64)' || true)
-if [ -z "$DOSEMU_PKGS" ]; then
-  echo "ERROR: no dosemu2 packages installed; PPA install must have failed."
-  exit 1
-fi
-echo "Staging files from: $DOSEMU_PKGS"
+# ladspa's filter.so is dlopen()'d by dosemu2's sound-effects plugin
+# through the LADSPA SDK's own loader, which searches $LADSPA_PATH (set
+# below). It needs only libc/libm, both already loaded from sharun's
+# bundle by the time anything dlopen()s it, so it doesn't have to go
+# through sharun's own lib deployment.
+cp -av /usr/lib/ladspa "$APPDIR/share/ladspa"
 
-for pkg in $DOSEMU_PKGS; do
-  dpkg -L "$pkg"
-done | sort -u | while read -r path; do
-  # Skip directories and anything that isn't a real file or symlink.
-  [ -f "$path" ] || [ -L "$path" ] || continue
-  case "$path" in
-    /usr/share/doc/*|/usr/share/lintian/*|/usr/share/menu/*) continue ;;
-  esac
-  mkdir -p "$APPDIR$(dirname "$path")"
-  cp -P "$path" "$APPDIR$path"
-done
+# Deploy dosemu2.bin directly (not the /usr/bin/dosemu shell launcher --
+# it only adds convenience flag translation, dosemu2.bin works standalone)
+# plus every plugin .so. The plugins are dlopen()'d, not DT_NEEDED, so
+# quick-sharun's normal dependency-closure walk wouldn't otherwise find
+# them; passing them explicitly is more deterministic in CI than relying
+# on quick-sharun's strace-based dlopen discovery (which needs ptrace).
+./quick-sharun /usr/libexec/dosemu2/dosemu2.bin /usr/lib/dosemu/libplugin_*.so
 
-# Sanity-check the main binary made it.
-DOSEMU_BIN="$APPDIR/usr/libexec/dosemu2/dosemu2.bin"
-if [ ! -f "$DOSEMU_BIN" ]; then
-  echo "ERROR: $DOSEMU_BIN missing after staging."
-  exit 1
-fi
-
-# Patch dosemu2.bin's rpath so it finds libdosemu2.so.0.1 (and other bundled
-# libs) without us having to export LD_LIBRARY_PATH from AppRun. Exporting it
-# leaks the AppDir's bundled libreadline/libtinfo/etc. into child shells
-# that dosemu2 spawns, breaking commands like `bash` and `sh` with symbol
-# lookup errors. linuxdeploy patches the bundled libraries' rpath but not
-# the main executable when it lives in /usr/libexec rather than /usr/bin.
-# The relative jumps are two levels deep because libexec/dosemu2/ is three
-# directories under usr (usr/libexec/dosemu2/dosemu2.bin → usr/lib/).
-patchelf --set-rpath '$ORIGIN/../../lib:$ORIGIN/../../lib/x86_64-linux-gnu:$ORIGIN/../../lib/aarch64-linux-gnu' \
-  "$DOSEMU_BIN"
-# Plugin rpath gets fixed AFTER linuxdeploy runs (see below) — linuxdeploy
-# relies on the PPA's `/usr/lib/fdpp:...` rpath entries to find libfdpp.so
-# during its dependency scan, so we mustn't strip them yet.
-
-# ---------------------------------------------------------------------------
-# Desktop file + icon
-# ---------------------------------------------------------------------------
-#
-# The PPA ships /usr/share/applications/dosemu.desktop (already copied above).
-# linuxdeploy needs both a desktop file and an icon file. dosemu2 ships an
-# XPM icon at /usr/share/dosemu/etc/dosemu.xpm; convert it to PNG for tools
-# that don't accept XPM (the appimage spec requires PNG for the embedded
-# .DirIcon).
-
-DESKTOP_SRC="$APPDIR/usr/share/applications/dosemu.desktop"
-if [ ! -f "$DESKTOP_SRC" ]; then
-  echo "WARNING: dosemu.desktop not installed by PPA; writing a fallback."
-  mkdir -p "$APPDIR/usr/share/applications"
-  cat > "$DESKTOP_SRC" <<EOF
-[Desktop Entry]
-Name=DOSEMU
-Comment=DOS Emulator
-Exec=dosemu
-Icon=dosemu
-Type=Application
-Categories=Emulator;System;
-Terminal=true
+# Written after the deploy pass, not before: quick-sharun's own
+# libfontconfig post-deploy hook copies the build container's
+# /etc/fonts/fonts.conf here, and that one points at the *host's*
+# /usr/share/fonts. Replace it with a self-contained config -- prefix=
+# "relative" resolves against the directory holding this file, so it
+# survives the AppImage being mounted at an unpredictable path. Only the
+# bundled fonts are visible to dosemu2 as a result, which is what makes
+# the font lookup behave the same on every host.
+mkdir -p "$APPDIR/etc/fonts"
+cat > "$APPDIR/etc/fonts/fonts.conf" <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <dir prefix="relative">../../share/fonts</dir>
+  <cachedir prefix="xdg">fontconfig</cachedir>
+</fontconfig>
 EOF
-fi
 
-# The PPA's dosemu.desktop ships Icon=/usr/share/dosemu/icons/dosemu.xpm
-# (absolute path), which appimagetool rejects — it wants a bare icon name
-# resolvable against the staged hicolor theme. Rewrite to Icon=dosemu.
-sed -i 's|^Icon=.*|Icon=dosemu|' "$DESKTOP_SRC"
+# sharun expands ${SHARUN_DIR} in .env at launch; it must stay unexpanded
+# here (single quotes), same rule as PATH_MAPPING above.
+{
+  echo 'FONTCONFIG_FILE=${SHARUN_DIR}/etc/fonts/fonts.conf'
+  echo 'LADSPA_PATH=${SHARUN_DIR}/share/ladspa'
+} >> "$APPDIR/.env"
 
-XPM_ICON=$(find "$APPDIR/usr/share/dosemu" -name '*.xpm' 2>/dev/null | head -1)
-mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-ICON_FILE="$APPDIR/usr/share/icons/hicolor/256x256/apps/dosemu.png"
-if [ -n "$XPM_ICON" ]; then
-  # The `!` forces exact dimensions, ignoring aspect ratio — required because
-  # appimagetool's icon validation fails if x and y resolution differ.
-  convert "$XPM_ICON" -resize '256x256!' "$ICON_FILE"
-else
-  # Last-resort placeholder: solid square. Without an icon, appimagetool fails.
-  convert -size 256x256 xc:'#1a1a1a' \
-    -fill white -gravity center -pointsize 96 -annotate +0+0 'DOS' \
-    "$ICON_FILE"
-fi
+./quick-sharun --make-appimage
 
-# ---------------------------------------------------------------------------
-# Run linuxdeploy to bundle shared libs and finalise the AppDir
-# ---------------------------------------------------------------------------
-
-OUT_DIR="$WORKSPACE/out"
-mkdir -p "$OUT_DIR"
-cd "$OUT_DIR"
-
-export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
-
-# `--executable` is the binary linuxdeploy scans for shared-lib deps.
-# We point it at the real dosemu2.bin (not the /usr/bin/dosemu launcher
-# script), so its NEEDED libs — including libdosemu2.so.0.1 — get bundled.
-linuxdeploy \
-  --appdir "$APPDIR" \
-  --executable "$DOSEMU_BIN" \
-  --desktop-file "$DESKTOP_SRC" \
-  --icon-file "$ICON_FILE" \
-  --icon-filename dosemu \
-  --custom-apprun "$WORKSPACE/AppRun"
-
-# Fix plugin rpaths now that linuxdeploy has staged libfdpp.so.* / libsearpc.so.*
-# into $APPDIR/usr/lib. The PPA-built plugins carry an rpath of
-# `/usr/lib/fdpp:.../:$ORIGIN` which doesn't reach the bundled libs at
-# $APPDIR/usr/lib (one level above $APPDIR/usr/lib/dosemu where the plugins
-# live). Replace with `$ORIGIN/..:$ORIGIN` so dlopen succeeds at AppImage-run
-# time. This must happen AFTER linuxdeploy — its dependency scan relies on
-# the absolute-path rpath entries to locate libfdpp.so.* in the build env.
-for plugin in "$APPDIR/usr/lib/dosemu/"libplugin_*.so; do
-  [ -f "$plugin" ] || continue
-  patchelf --set-rpath '$ORIGIN/..:$ORIGIN' "$plugin"
-done
-
-# ---------------------------------------------------------------------------
-# Pack the AppImage with auto-update info pointing at this repo's releases
-# ---------------------------------------------------------------------------
-
-ARCH=$(uname -m)
-OUT_APPIMAGE="dosemu2-$VERSION-$ARCH.AppImage"
-
-# GitHub Actions sets GITHUB_REPOSITORY to "owner/name" — strip the
-# owner so the zsync URL tracks whatever repo this is actually being
-# built in. Falls back to the current name for local builds.
-REPO="${GITHUB_REPOSITORY##*/}"
-REPO="${REPO:-dosemu2-appimage}"
-GITHUB_REPOSITORY_OWNER="${GITHUB_REPOSITORY_OWNER:-theimpossibleastronaut}"
-# "latest", not $VERSION: gh-releases-zsync treats the literal string
-# "latest" as "resolve against whatever GitHub currently marks as the
-# Latest Release", regardless of that release's actual tag name. An
-# AppImage bakes this string in at build time and can never change it
-# on a copy a user already has, so pinning it to a specific tag (e.g.
-# $VERSION) only keeps working for as long as every future build
-# reuses that exact tag. If $VERSION ever varies release to release —
-# e.g. a future switch to building from a pinned dosemu2 git commit,
-# where the version string tracks the commit — a tag-pinned UPINFO
-# would silently stop finding updates for anyone already holding an
-# older build, with no error surfaced to them.
-UPINFO="gh-releases-zsync|$GITHUB_REPOSITORY_OWNER|$REPO|latest|*$ARCH.AppImage.zsync"
-
-appimagetool \
-  --comp zstd \
-  --mksquashfs-opt -Xcompression-level \
-  --mksquashfs-opt 20 \
-  -u "$UPINFO" \
-  "$APPDIR" "$OUT_APPIMAGE"
-
-sha256sum "$OUT_APPIMAGE" > "$OUT_APPIMAGE.sha256sum"
-cat "$OUT_APPIMAGE.sha256sum"
-
-# Emit the resolved dosemu2 version next to the artifacts so the workflow
-# can pick it up for the release tag/title without re-querying the PPA.
-printf '%s\n' "$VERSION" > "$OUT_DIR/DOSEMU2_VERSION"
-printf '%s\n' "$DOSEMU2_DEB_VERSION" > "$OUT_DIR/DOSEMU2_DEB_VERSION"
-
-exit 0
+ls -lh "$OUTPATH"
+echo "Built from dosemu2 commit: $DOSEMU2_COMMIT"
+printf '%s\n' "$DOSEMU2_COMMIT" > "$OUTPATH/DOSEMU2_COMMIT"
+printf '%s\n' "$VERSION" > "$OUTPATH/DOSEMU2_VERSION"

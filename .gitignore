@@ -3,3 +3,6 @@
 # AppImage build output
 /out/
 /squashfs-root/
+
+# downloaded + patched fresh by build-appimage.sh on every run
+/quick-sharun

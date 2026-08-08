@@ -1,0 +1,178 @@
+# Build-environment image for the AppImage build (build-appimage.sh).
+#
+# Parameterized by BASE so one Dockerfile produces both arches, matching
+# Dealer's Choice's anylinux build-env pattern:
+#   amd64 <- archlinux:latest   (official Arch, x86_64 only)
+#   arm64 <- lopsided/archlinux (community Arch Linux ARM)
+ARG BASE=archlinux:latest
+FROM ${BASE}
+
+# pacman 7.0's download sandbox (Landlock + the 'alpm' DownloadUser) cannot be
+# applied inside the CI container, so any pacman call that actually retrieves
+# packages aborts ("switching to sandbox user 'alpm' failed"). Disable it for
+# every pacman invocation, including the get-debloated-pkgs / quick-sharun
+# calls that run at AppImage build time.
+RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+
+# Build + runtime deps for dosemu2 and its toolchain, plus the
+# AppImage-bundling tools (patchelf/wget/zsync). Kept in sync with what
+# build-appimage.sh and the toolchain build below actually need.
+# autoconf-archive is a dj64dev makedepend (its AUR PKGBUILD lists it).
+RUN pacman -Syu --noconfirm --needed \
+        base-devel \
+        git \
+        meson \
+        ninja \
+        nasm \
+        pkgconf \
+        elfutils \
+        automake \
+        autoconf \
+        autoconf-archive \
+        libtool \
+        texinfo \
+        ctags \
+        jansson \
+        glib2 \
+        json-c \
+        libslirp \
+        libseccomp \
+        alsa-lib \
+        fluidsynth \
+        ladspa \
+        gpm \
+        libsamplerate \
+        vde2 \
+        libx11 \
+        libxext \
+        sdl3 \
+        libb64 \
+        readline \
+        slang \
+        patchelf \
+        wget \
+        zsync \
+  && rm -rf /var/cache/pacman/pkg/*
+
+# ---------------------------------------------------------------------------
+# dosemu2's toolchain, built from source and pinned to a commit — the same
+# components and pins as theimpossibleastronaut/dosemu2-container's Alpine
+# chain (Dockerfile.02-binutils / Dockerfile.03-toolchain), rebuilt here
+# against glibc instead of musl.
+#
+# Every component installs to --prefix=/usr (not the meson/autotools
+# default /usr/local), matching each component's AUR PKGBUILD
+# (aur.archlinux.org/packages/{fdpp,thunk_gen,dj64,...}-git) and what
+# quick-sharun expects to bundle from. This isn't just convention: fdpp's
+# meson.build resolves its thunk_gen dependency via pkg-config, and
+# pkg-config's default search path on Arch doesn't include
+# /usr/local/lib/pkgconfig — installing thunk_gen there makes fdpp's
+# `dependency('thunk_gen')` silently miss it and fall back to building
+# its own bundled copy, which trips a `custom_target(depends:)` type
+# error on meson >=1.11 (fdpp's fallback-subproject codepath predates
+# that stricter check). --prefix=/usr avoids the problem outright.
+# ---------------------------------------------------------------------------
+
+ARG BINUTILS_REF=binutils-2_47
+RUN git clone --depth 1 --branch "${BINUTILS_REF}" \
+        git://sourceware.org/git/binutils-gdb.git /root/binutils-gdb \
+ && cd /root/binutils-gdb \
+ && ./configure --prefix=/usr --target=i686-unknown-linux-gnu \
+        --disable-gdb --disable-texinfo --disable-sim --disable-gprofng \
+ && make -j"$(nproc)" \
+ && make install \
+ && rm -rf /root/binutils-gdb
+
+ARG THUNK_GEN_REF=4967a317e97167640d524f66860908fcb0d88fa8
+ARG FDPP_REF=3c2dd80cc1ca152d26e35539c821cc7086537023
+ARG SMALLERC_REF=1865d79ce7a5ad3f8a9515a571437cee084b8b1d
+ARG DJSTUB_REF=f002e47f1d579e52e5162efbe8ae3e6308c67258
+ARG DJ64DEV_REF=fc40c12a481c44fa19757dfd753962157281d390
+ARG COMCOM64_REF=7d72f64bf327fb78f504498ac81e21bd57368904
+ARG LIBSEARPC_REF=23d5df62815fb3b7825bf4e1a28b29af701e8cb2
+
+RUN mkdir -p /root/thunk_gen && cd /root/thunk_gen \
+ && git init -q && git remote add origin https://github.com/stsp/thunk_gen.git \
+ && git fetch -q --depth 1 origin "${THUNK_GEN_REF}" && git checkout -q FETCH_HEAD \
+ && meson setup --prefix=/usr --buildtype=plain build \
+ && meson compile -C build \
+ && meson install -C build \
+ && rm -rf /root/thunk_gen
+
+RUN mkdir -p /root/fdpp && cd /root/fdpp \
+ && git init -q && git remote add origin https://github.com/dosemu2/fdpp.git \
+ && git fetch -q --depth 1 origin "${FDPP_REF}" && git checkout -q FETCH_HEAD \
+ && ./configure.meson -- --prefix /usr \
+ && meson compile --verbose -C build \
+ && meson install -C build \
+ && rm -rf /root/fdpp
+
+# smallerc's own configure/Makefile default to /usr/local; its AUR
+# PKGBUILD patches common.mk's `prefix` line before building rather
+# than passing a flag (there's no configure --prefix option).
+RUN mkdir -p /root/smallerc && cd /root/smallerc \
+ && git init -q && git remote add origin https://github.com/alexfru/smallerc.git \
+ && git fetch -q --depth 1 origin "${SMALLERC_REF}" && git checkout -q FETCH_HEAD \
+ && sed -i -e '/^prefix =/ s:/usr/local:/usr:g' common.mk \
+ && ./configure \
+ && make \
+ && make install \
+ && rm -rf /root/smallerc
+
+# djstub's Makefile also hardcodes /usr/local in PREFIX/prefix
+# assignments; same sed fix its AUR PKGBUILD applies.
+RUN mkdir -p /root/djstub && cd /root/djstub \
+ && git init -q && git remote add origin https://github.com/stsp/djstub.git \
+ && git fetch -q --depth 1 origin "${DJSTUB_REF}" && git checkout -q FETCH_HEAD \
+ && sed -E -e '/^PREFIX ?=/ s:/usr/local:/usr:g' -e '/^prefix ?=/ s:/usr/local:/usr:g' \
+        -i Makefile \
+ && make -j"$(nproc)" \
+ && make install \
+ && rm -rf /root/djstub
+
+# dj64dev's default sysroot (${prefix}/i386-pc-dj64 = /usr/i386-pc-dj64
+# with --prefix=/usr) is where libdjstub64.so's compiled-in CRT0 path
+# points — read at *runtime* on every dj64 program launch, see
+# stub.c/open(CRT0, ...). build-appimage.sh maps that whole directory
+# into the AppDir via quick-sharun's PATH_MAPPING (an LD_PRELOAD path
+# interceptor, not a binary patch), so the sysroot doesn't need to be
+# relocated to some sharun-recognized prefix at build time — any real
+# absolute path works as long as PATH_MAPPING covers it and
+# build-appimage.sh bundles $(sysroot)/lib/crt0.elf at the matching
+# relative path. The makefile sed sweep (dj64dev's AUR PKGBUILD does
+# the same) catches any other hardcoded /usr/local left in nested
+# makefiles beyond what --prefix covers.
+RUN mkdir -p /root/dj64dev && cd /root/dj64dev \
+ && git init -q && git remote add origin https://github.com/stsp/dj64dev.git \
+ && git fetch -q --depth 1 origin "${DJ64DEV_REF}" && git checkout -q FETCH_HEAD \
+ && ./autogen.sh \
+ && ./configure --prefix=/usr --disable-32bit --disable-ncurses \
+ && grep -rle '/usr/local' --include=makefile --include=Makefile . \
+        | xargs -r sed -E -e '/^PREFIX ?=/ s:/usr/local:/usr:g' \
+                           -e '/^prefix ?=/ s:/usr/local:/usr:g' -i \
+ && make -j"$(nproc)" \
+ && make install \
+ && rm -rf /root/dj64dev
+
+# comcom64's src/makefile.inc supports overriding prefix via a PREFIX
+# make variable directly (a Termux-compat path: ifneq($(PREFIX),)),
+# which is simpler and less brittle than sed-patching its makefiles —
+# and unlike the sed sweep used for the other components, avoids
+# needing to match makefile.inc as well as makefile/Makefile.
+RUN mkdir -p /root/comcom64 && cd /root/comcom64 \
+ && git init -q && git remote add origin https://github.com/dosemu2/comcom64.git \
+ && git fetch -q --depth 1 origin "${COMCOM64_REF}" && git checkout -q FETCH_HEAD \
+ && make PREFIX=/usr static -j"$(nproc)" \
+ && make PREFIX=/usr install_64 \
+ && rm -rf /root/comcom64
+
+RUN mkdir -p /root/libsearpc && cd /root/libsearpc \
+ && git init -q && git remote add origin https://github.com/haiwen/libsearpc.git \
+ && git fetch -q --depth 1 origin "${LIBSEARPC_REF}" && git checkout -q FETCH_HEAD \
+ && ./autogen.sh \
+ && ./configure --prefix=/usr PYTHON=/usr/bin/python \
+ && make -j"$(nproc)" \
+ && make install \
+ && rm -rf /root/libsearpc
+
+CMD ["/bin/bash", "-l"]

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=dosemu2
+Comment=DOS Emulator
+Exec=dosemu2.bin
+Icon=dosemu
+Categories=Emulator;System;
+Terminal=true
