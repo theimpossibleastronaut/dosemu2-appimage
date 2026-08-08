@@ -45,7 +45,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
             platform: linux/arm64
-            base: lopsided/archlinux@sha256:bb1e4b4a564126c7d91c63813a3d3afe34334ec5dd15285ed8b574c88e23fbde
+            base: lopsided/archlinux@sha256:63c8d3c53f643ff81241058f30f26b1fc5debea807c1b326e3f85814eac87d37
 
     steps:
       - name: Checkout

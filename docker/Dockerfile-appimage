@@ -75,6 +75,12 @@ RUN pacman -Syu --noconfirm --needed \
 # that stricter check). --prefix=/usr avoids the problem outright.
 # ---------------------------------------------------------------------------
 
+# The i686-linux-gnu-ld symlink is what fdpp looks for. Its
+# fdpp/kernel/meson.build searches ['i686-linux-gnu-ld', 'i386-elf-ld',
+# 'x86_64-linux-gnu-ld', 'ld.bfd'] for the linker it calls with
+# `-melf_i386`, and the triplet built here is not in that list. On x86_64
+# the fallback ld.bfd handles elf_i386 anyway, so the miss is invisible;
+# on aarch64 it fails with "unrecognised emulation mode: elf_i386".
 ARG BINUTILS_REF=binutils-2_47
 RUN git clone --depth 1 --branch "${BINUTILS_REF}" \
         git://sourceware.org/git/binutils-gdb.git /root/binutils-gdb \
@@ -83,6 +89,7 @@ RUN git clone --depth 1 --branch "${BINUTILS_REF}" \
         --disable-gdb --disable-texinfo --disable-sim --disable-gprofng \
  && make -j"$(nproc)" \
  && make install \
+ && ln -s i686-unknown-linux-gnu-ld /usr/bin/i686-linux-gnu-ld \
  && rm -rf /root/binutils-gdb
 
 ARG THUNK_GEN_REF=4967a317e97167640d524f66860908fcb0d88fa8
