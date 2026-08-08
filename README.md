@@ -1,101 +1,109 @@
 # dosemu2 AppImage
 
 A single-file [AppImage](https://appimage.org/) of
-[dosemu2](https://github.com/dosemu2/dosemu2) — a virtual machine that
-runs DOS programs under Linux. Download one file, `chmod +x`, run; no
-installation, no PPA, no distro dependencies.
+[dosemu2](https://github.com/dosemu2/dosemu2), a virtual machine that
+runs DOS programs under Linux. Download one file, `chmod +x`, run.
+
+The AppImage carries its own C library and dynamic loader, so it runs on
+any Linux distribution: glibc or musl, new or old. This is the
+[AnyLinux](https://github.com/pkgforge-dev/Anylinux-AppImages) method
+(sharun + uruntime + DwarFS).
 
 Upstream project: <https://github.com/dosemu2/dosemu2>
 
 ## Download
 
-Each release on this repo is tagged with the upstream dosemu2 version
-it wraps (e.g. `2.0pre9`). Grab the latest from the
-[releases page](../../releases/latest):
+Builds are published to a single rolling
+[`latest` release](../../releases/latest). The file name carries the
+dosemu2 version it was built from.
 
 ```sh
-# x86_64 host — substitute the latest version
-VERSION=2.0pre9
-wget https://github.com/theimpossibleastronaut/dosemu-appimage/releases/download/$VERSION/dosemu2-$VERSION-x86_64.AppImage
-chmod +x dosemu2-$VERSION-x86_64.AppImage
-./dosemu2-$VERSION-x86_64.AppImage
+chmod +x dosemu2-*.AppImage
+./dosemu2-*.AppImage
 ```
 
-An `aarch64.AppImage` is built next to it for arm64 hosts.
+An `aarch64` build sits next to it for arm64 hosts.
 
 If [appimageupdatetool](https://github.com/AppImageCommunity/AppImageUpdate)
-is installed, the AppImage embeds zsync update info and can update
-itself in place when a newer release is published:
+is installed, the AppImage can update itself in place:
 
 ```sh
 appimageupdatetool dosemu2-*.AppImage
 ```
 
-If your distro doesn't package it, [AM](https://github.com/ivan-hc/AM)
+If your distro does not package it, [AM](https://github.com/ivan-hc/AM)
 can install it (`am -i appimageupdatetool`).
 
 ## Build locally
 
-The same builds the GitHub Actions workflows run can be reproduced on
-any host with Docker:
+You need Docker. First build the build environment, which is Arch plus
+dosemu2's toolchain (binutils, thunk_gen, fdpp, smallerc, djstub,
+dj64dev, comcom64, libsearpc) compiled from pinned commits:
 
 ```sh
-docker compose run --rm build
+docker build -f docker/Dockerfile-appimage -t dosemu2-appimage-build-env .
 ```
 
-The finished `.AppImage` lands in `out/`, labelled with whatever
-dosemu2 version the PPA currently ships (e.g.
-`dosemu2-2.0pre9-x86_64.AppImage`). The build runs inside
-`andy5995/linuxdeploy:v3-jammy` and auto-detects host UID/GID from
-the bind-mounted workspace owner, so the resulting files are owned by
-you. To override the version label or UID/GID, export `VERSION=...`,
-`HOSTUID=$(id -u)`, or `HOSTGID=$(id -g)` before running compose.
+Then build the AppImage. `DOSEMU2_REF` is required and can be any
+dosemu2 commit, tag or branch:
+
+```sh
+docker run --rm -u 0 -v "$PWD":/workspace -w /workspace \
+  -e DOSEMU2_REF=devel -e WORKSPACE=/workspace \
+  dosemu2-appimage-build-env sh -c './build-appimage.sh'
+```
+
+The finished `.AppImage` lands in `out/`, owned by root because the
+build runs as root inside the container. `out/DOSEMU2_COMMIT` records
+the exact commit it came from.
 
 ## How it works
 
-`build-appimage.sh` runs inside the linuxdeploy container and:
+`build-appimage.sh` runs inside the build environment and:
 
-1. Adds the upstream [dosemu2 PPA](https://launchpad.net/~dosemu2/+archive/ubuntu/ppa)
-   and `apt-get install`s `dosemu2` + `comcom32`.
-2. Enumerates every file shipped by the dosemu2 / fdpp / comcom32 /
-   comcom64 / dj64 / libdosemu2 debs (via `dpkg -L`) and stages them
-   under an `AppDir`.
-3. Patches the rpath of `dosemu2.bin` and the bundled plugin `.so`
-   files (`$ORIGIN/..`) so dlopens succeed at AppImage-run time without
-   needing `LD_LIBRARY_PATH` — exporting that env var would leak the
-   AppDir's older libreadline into child shells that dosemu2 spawns.
-4. Converts the bundled XPM icon to PNG (appimagetool requires PNG).
-5. Runs `linuxdeploy` + `appimagetool` with a custom `AppRun`.
+1. Clones dosemu2 at `DOSEMU2_REF` and builds it with `--prefix=/usr`,
+   installing into the container's own `/usr`.
+2. Copies the data dosemu2 looks up by absolute path at runtime into the
+   AppDir: fdpp's kernel, comcom64's `command.com`, dj64's `crt0.elf`,
+   dosemu2's keymaps and command utilities, the oldschool TTF fonts, and
+   the LADSPA plugins.
+3. Runs `quick-sharun` over `dosemu2.bin` and every plugin `.so`, which
+   collects the full library closure including libc and the loader, then
+   packs the result as a DwarFS AppImage.
 
-`AppRun` bypasses the PPA's `/usr/bin/dosemu` shell launcher (whose
-hardcoded `/usr/...` paths don't survive the AppImage mount) and execs
-`dosemu2.bin` directly. It passes `--Flibdir` / `--Fplugindir` pointing
-at the mounted AppDir, sets `FDPP_KERNEL_DIR` and `DOSEMU2_COMCOM_DIR`
-to redirect the binary's other absolute-path lookups, and translates
-launcher-style flags (`-dumb`, `-quiet`, `-home`) to their
-`dosemu2.bin` equivalents.
+Two runtime path problems are worth knowing about, because they explain
+the odd-looking parts of the script.
+
+dosemu2 and its toolchain bake absolute `/usr/...` paths into their
+binaries at compile time, and some of those paths are read on every
+launch (dj64's `crt0.elf`) or assembled at runtime from pieces that
+never appear as one matchable string. quick-sharun's automatic path
+patcher rewrites such strings in place, and on `libdosemu2.so` that
+corrupts them: `DOSEMUCMDS_DEFAULT` is a compile-time pointer *into* the
+middle of another string literal, so rewriting the literal moves what
+the pointer reads. The script therefore disables the automatic patcher
+and uses `PATH_MAPPING` instead, an `LD_PRELOAD` interceptor that
+redirects the resolved path at runtime.
+
+The SDL text plugin asks fontconfig for the fonts by family name and
+refuses a substitute, so the AppImage ships its own fontconfig
+configuration pointing at the two bundled fonts.
 
 ## Limitations
 
-- **Ships comcom32, not comcom64.** comcom64 needs the dj64 runtime,
-  whose `libdjstub64.so` hardcodes `/usr/i386-pc-dj64/lib/crt0.elf`
-  with no env-var override — that path is unreachable from inside the
-  AppImage mount. comcom32 uses plain DPMI and works. The user-visible
-  difference is small (both implement `command.com`), but DJGPP-
-  compiled DOS programs that depend on the dj64 runtime won't work
-  inside this AppImage.
-- **Landlock sandbox is disabled at runtime.** The PPA's dosemu2
-  (currently 2.0pre9) was built against an older landlock header. On
-  kernels exposing landlock ABI 8 the binary logs
-  `landlock_init() failed` at startup and continues without the
-  sandbox. Functionally fine, just noisier.
+- **No soundfont.** fluidsynth reports `soundfonts not found` unless one
+  is installed on the host. A General MIDI soundfont is over 100 MB,
+  which is more than the rest of the AppImage put together.
+- **No X11-native video plugin.** dosemu2's `X` plugin needs `mkfontdir`
+  at build time. The SDL and Xkmaps plugins cover the same ground.
+- **Landlock.** On kernels older than the headers dosemu2 was built
+  against, startup logs `landlock_init() failed` and continues without
+  the sandbox.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Compatible with dosemu2's GPL-2.0-only:
-this repo only contains build glue, not dosemu2 source.
+MIT, see [LICENSE](LICENSE). Compatible with dosemu2's GPL-2.0-only:
+this repo contains build glue, not dosemu2 source.
 
-The AppImage payload is dosemu2 itself, licensed under GPL-2.0-only,
-plus its bundled runtime libraries under their respective licenses
-(LGPL, MIT, etc.). The AppImage's `usr/share/doc/` directory carries
-linuxdeploy-collected copyright files for each shared library.
+The AppImage payload is dosemu2 itself under GPL-2.0-only, plus its
+bundled runtime libraries under their own licenses.
