@@ -21,6 +21,7 @@ ARCH="$(uname -m)"
 DOSEMU2_REF="${DOSEMU2_REF:?DOSEMU2_REF must be set (a dosemu2 commit, branch, or tag)}"
 
 SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
+DEBLOAT_PKGS="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/get-debloated-pkgs.sh"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORKSPACE="${WORKSPACE:-$SCRIPT_DIR}"
@@ -55,6 +56,23 @@ VERSION=$(./getversion)
 
 # --- bundle with sharun and pack the AppImage ------------------------------
 cd "$WORKSPACE"
+
+# The SDL3 plugin renders through OpenGL, so mesa has to be bundled -- but
+# stock Arch mesa brings a 164 MiB libLLVM, a 52 MiB libgallium and a 32 MiB
+# libicudata with it. --add-common (which implies --add-mesa) installs
+# pkgforge-dev's nano mesa/LLVM and the icu stub over the stock packages,
+# and quick-sharun then bundles those instead. mesa-nano keeps every
+# hardware gallium driver plus the softpipe software fallback, so a host
+# with no GPU still renders.
+#
+# pacman -Syu first: the build-env image bakes in a package DB, Arch is
+# rolling, and get-debloated-pkgs resolves its own `pacman -U` dependencies
+# against that DB -- a stale one points at versions the mirrors have already
+# pruned, which 404s.
+pacman -Syu --noconfirm
+wget --retry-connrefused --tries=30 "$DEBLOAT_PKGS" -O ./get-debloated-pkgs
+chmod +x ./get-debloated-pkgs
+./get-debloated-pkgs --add-common --prefer-nano
 
 wget --retry-connrefused --tries=30 "$SHARUN" -O ./quick-sharun
 chmod +x ./quick-sharun

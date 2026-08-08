@@ -46,6 +46,8 @@ RUN pacman -Syu --noconfirm --needed \
         libx11 \
         libxext \
         sdl3 \
+        sdl3_ttf \
+        fontconfig \
         libb64 \
         readline \
         slang \

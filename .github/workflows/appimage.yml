@@ -81,7 +81,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull build environment
-        run: docker pull "$BUILD_IMAGE"
+        # Builds the image here if the registry has nothing to serve,
+        # which is the case until appimage-build-image.yml has published
+        # once. Costs about half an hour: it compiles dosemu2's whole
+        # toolchain. A *changed* Dockerfile still pulls the old published
+        # image, so let appimage-build-image.yml finish on trunk before
+        # dispatching a build that depends on the change.
+        run: docker pull "$BUILD_IMAGE" ||
+             docker build -f docker/Dockerfile-appimage -t "$BUILD_IMAGE" .
 
       - name: Build AppImage
         # Runs as root inside the container: build-appimage.sh installs

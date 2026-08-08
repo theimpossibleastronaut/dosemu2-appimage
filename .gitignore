@@ -6,3 +6,4 @@
 
 # downloaded + patched fresh by build-appimage.sh on every run
 /quick-sharun
+/get-debloated-pkgs
