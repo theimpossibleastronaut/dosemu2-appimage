@@ -52,9 +52,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
+        include:
+          - os: ubuntu-24.04
+            base: archlinux:latest
+          # Official Arch is x86_64-only. Keep this digest in step with
+          # appimage-build-image.yml, which builds the published image.
+          - os: ubuntu-24.04-arm
+            base: lopsided/archlinux@sha256:bb1e4b4a564126c7d91c63813a3d3afe34334ec5dd15285ed8b574c88e23fbde
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -87,8 +91,11 @@ jobs:
         # toolchain. A *changed* Dockerfile still pulls the old published
         # image, so let appimage-build-image.yml finish on trunk before
         # dispatching a build that depends on the change.
+        env:
+          BASE: ${{ matrix.base }}
         run: docker pull "$BUILD_IMAGE" ||
-             docker build -f docker/Dockerfile-appimage -t "$BUILD_IMAGE" .
+             docker build --build-arg "BASE=$BASE"
+               -f docker/Dockerfile-appimage -t "$BUILD_IMAGE" .
 
       - name: Build AppImage
         # Runs as root inside the container: build-appimage.sh installs
