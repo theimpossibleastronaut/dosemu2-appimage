@@ -67,6 +67,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Full history so the Dockerfile-changed check below can diff
+          # against the event's base commit. This repo is build glue, so
+          # the clone is cheap.
+          fetch-depth: 0
 
       - name: Resolve dosemu2 ref
         env:
@@ -89,18 +94,34 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull build environment
-        # Builds the image here if the registry has nothing to serve,
-        # which is the case until appimage-build-image.yml has published
-        # once. Costs about half an hour: it compiles dosemu2's whole
-        # toolchain. A *changed* Dockerfile still pulls the old published
-        # image, so let appimage-build-image.yml finish on trunk before
-        # dispatching a build that depends on the change.
+      - name: Get build environment
+        # Builds the image here rather than pulling when this event's own
+        # diff changes the Dockerfile: appimage-build-image.yml runs on the
+        # same push and takes about half an hour, so the registry is still
+        # serving the previous image while this job needs the new one.
+        # Pulling anyway produced a build against an image missing the
+        # packages the same commit had just added. Also builds when the
+        # pull fails outright, which is the case before the image has ever
+        # been published.
         env:
           BASE: ${{ matrix.base }}
-        run: docker pull "$BUILD_IMAGE" ||
-             docker build --build-arg "BASE=$BASE"
-               -f docker/Dockerfile-appimage -t "$BUILD_IMAGE" .
+          BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          changed=no
+          if [ -n "${BEFORE:-}" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BEFORE" "$GITHUB_SHA" \
+              | grep -qx 'docker/Dockerfile-appimage' && changed=yes || :
+          fi
+          if [ "$changed" = yes ]; then
+            echo "Dockerfile changed in this event; building the image here."
+            docker build --build-arg "BASE=$BASE" \
+              -f docker/Dockerfile-appimage -t "$BUILD_IMAGE" .
+          else
+            docker pull "$BUILD_IMAGE" ||
+              docker build --build-arg "BASE=$BASE" \
+                -f docker/Dockerfile-appimage -t "$BUILD_IMAGE" .
+          fi
 
       - name: Build AppImage
         # Runs as root inside the container: build-appimage.sh installs

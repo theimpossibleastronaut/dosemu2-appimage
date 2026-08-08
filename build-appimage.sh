@@ -172,8 +172,12 @@ cp -av /usr/share/fonts/oldschool "$APPDIR/share/fonts/oldschool"
 # libao dlopens its output backends (alsa, pulse, oss) from a compiled-in
 # plugin dir rather than linking them, so an unbundled dir leaves the
 # libao plugin loading with no way to reach a sound device: "libao:
-# unable to open output device" on every start.
-cp -av /usr/lib/ao "$APPDIR/share/ao"
+# unable to open output device" on every start. Guarded because libao is
+# optional -- an older build-env image without it should still produce an
+# AppImage, just one without the libao plugin, rather than dying here.
+if [ -d /usr/lib/ao ]; then
+  cp -av /usr/lib/ao "$APPDIR/share/ao"
+fi
 
 # ladspa's filter.so is dlopen()'d by dosemu2's sound-effects plugin
 # through the LADSPA SDK's own loader, which searches $LADSPA_PATH (set
