@@ -1,8 +1,9 @@
 # dosemu2 AppImage
 
-A single-file [AppImage](https://appimage.org/) of
+An unofficial single-file [AppImage](https://appimage.org/) of
 [dosemu2](https://github.com/dosemu2/dosemu2), a virtual machine that
-runs DOS programs under Linux. Download one file, `chmod +x`, run.
+runs DOS programs under Linux, built from the official sources. Download
+one file, `chmod +x`, run.
 
 The AppImage carries its own C library and dynamic loader, so it runs on
 any Linux distribution: glibc or musl, new or old. This is the
