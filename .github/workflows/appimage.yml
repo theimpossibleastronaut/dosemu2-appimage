@@ -188,6 +188,11 @@ jobs:
         run: |
           echo "VERSION=$(cat out/DOSEMU2_VERSION)" >> "$GITHUB_ENV"
           echo "DOSEMU2_COMMIT=$(cat out/DOSEMU2_COMMIT)" >> "$GITHUB_ENV"
+          # A rebuild at an unchanged dosemu2 commit produces a different
+          # bundle under an identical version string, so without this the
+          # release page looks untouched when it is not. The time is in
+          # there because two rebuilds in one day is a normal thing to do.
+          echo "BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_ENV"
 
       - name: Publish release
         uses: ncipollo/release-action@v1
@@ -199,7 +204,7 @@ jobs:
           # the newest asset with no prerelease filter. One stream keeps
           # both of those pointing at the build that was actually tested.
           tag: latest
-          name: dosemu2 AppImage (${{ env.VERSION }})
+          name: dosemu2 AppImage ${{ env.VERSION }} (built ${{ env.BUILD_DATE }})
           artifacts: "./out/*AppImage*"
           body: |
             AppImage of [dosemu2](https://github.com/dosemu2/dosemu2),
