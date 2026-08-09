@@ -96,7 +96,7 @@ RUN git clone --depth 1 --branch "${BINUTILS_REF}" \
  && ./configure --prefix=/usr --target=i686-unknown-linux-gnu \
         --disable-gdb --disable-texinfo --disable-sim --disable-gprofng \
  && make -j"$(nproc)" \
- && make install \
+ && make install-strip \
  && ln -s i686-unknown-linux-gnu-ld /usr/bin/i686-linux-gnu-ld \
  && rm -rf /root/binutils-gdb
 
