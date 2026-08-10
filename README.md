@@ -58,6 +58,16 @@ The finished `.AppImage` lands in `out/`, owned by root because the
 build runs as root inside the container. `out/DOSEMU2_COMMIT` records
 the exact commit it came from.
 
+## Proposing a newer dosemu2
+
+The `DOSEMU2_REF` file in the repository root holds the dosemu2 commit
+the AppImage is built from. To propose a newer one, edit that file and
+open a pull request. CI then builds and smoke-tests both architectures
+against the commit you put there, and publishes nothing.
+
+Releases stay manual. A maintainer runs the workflow from the Actions
+tab with the commit to publish.
+
 ## How it works
 
 `build-appimage.sh` runs inside the build environment and:

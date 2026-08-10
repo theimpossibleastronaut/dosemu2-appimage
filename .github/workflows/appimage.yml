@@ -5,8 +5,11 @@ name: Build dosemu2 AppImage
 # push would republish "latest" with untested upstream code. Dispatch this
 # workflow with the ref you want.
 #
-# Pushes and PRs build and smoke-test against DEFAULT_DOSEMU2_REF below,
-# so a broken build script is caught, and publish nothing.
+# Pushes and PRs build and smoke-test against the sha in the DOSEMU2_REF
+# file and publish nothing, so a broken build script is caught. That file
+# is also how a contributor proposes a newer dosemu2: edit it, open a PR,
+# and CI builds and smoke-tests both arches against the proposed sha.
+# Merging it does not release anything — publishing is still a dispatch.
 
 on:
   workflow_dispatch:
@@ -23,6 +26,7 @@ on:
   push:
     branches: [trunk]
     paths: &p
+      - 'DOSEMU2_REF'
       - 'build-appimage.sh'
       - 'dosemu2.desktop'
       - 'dosemu.png'
@@ -37,10 +41,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Only used by push/PR test builds, which publish nothing. A release
-  # always comes from the sha typed into the dispatch form. Keep this
-  # roughly current so the test builds exercise recent dosemu2.
-  DEFAULT_DOSEMU2_REF: 604ce0cdd1a71f657e2a2df623d216d5ab289313
   BUILD_IMAGE: ghcr.io/theimpossibleastronaut/dosemu2-appimage-build-env:latest
 
 jobs:
@@ -78,7 +78,7 @@ jobs:
           INPUT_REF: ${{ inputs.dosemu2_ref }}
         run: |
           set -eu
-          ref="${INPUT_REF:-$DEFAULT_DOSEMU2_REF}"
+          ref="${INPUT_REF:-$(tr -d '[:space:]' < DOSEMU2_REF)}"
           # A ref reaches git and a docker -e flag, so keep it to the
           # characters a git ref can legally contain.
           case "$ref" in
