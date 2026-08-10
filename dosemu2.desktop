@@ -5,7 +5,7 @@ Comment=DOS Emulator
 Exec=dosemu2.bin
 Icon=dosemu
 Categories=Emulator;System;
-Terminal=true
+Terminal=false
 # WM_CLASS on the SDL window is "dosemu2.bin", "dosemu" (instance, class),
 # the class coming from SDL_HINT_APP_ID. Without this, quick-sharun warns
 # and guesses the binary name, which is the instance rather than the class.
