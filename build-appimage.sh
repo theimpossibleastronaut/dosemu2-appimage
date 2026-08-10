@@ -186,13 +186,26 @@ fi
 # through sharun's own lib deployment.
 cp -av /usr/lib/ladspa "$APPDIR/share/ladspa"
 
+# alsa-lib dlopens its backends from a compiled-in module dir, which is
+# Arch's /usr/lib/alsa-lib and exists nowhere else, so on any other host a
+# config routed through PulseAudio finds nothing and falls back to a hw
+# device the sound server already owns. Bundle the pulse/pipewire modules
+# (quick-sharun deploys the rest of the dir alongside them) and point
+# ALSA_PLUGIN_DIR at them, set in .env below. Guarded like libao above.
+ALSA_MODULES=
+for m in conf_pulse pcm_pulse ctl_pulse pcm_pipewire; do
+  if [ -e "/usr/lib/alsa-lib/libasound_module_$m.so" ]; then
+    ALSA_MODULES="$ALSA_MODULES /usr/lib/alsa-lib/libasound_module_$m.so"
+  fi
+done
+
 # Deploy dosemu2.bin directly (not the /usr/bin/dosemu shell launcher --
 # it only adds convenience flag translation, dosemu2.bin works standalone)
 # plus every plugin .so. The plugins are dlopen()'d, not DT_NEEDED, so
 # quick-sharun's normal dependency-closure walk wouldn't otherwise find
 # them; passing them explicitly is more deterministic in CI than relying
 # on quick-sharun's strace-based dlopen discovery (which needs ptrace).
-./quick-sharun /usr/libexec/dosemu2/dosemu2.bin /usr/lib/dosemu/libplugin_*.so
+./quick-sharun /usr/libexec/dosemu2/dosemu2.bin /usr/lib/dosemu/libplugin_*.so $ALSA_MODULES
 
 # Written after the deploy pass, not before: quick-sharun's own
 # libfontconfig post-deploy hook copies the build container's
@@ -217,6 +230,7 @@ EOF
 {
   echo 'FONTCONFIG_FILE=${SHARUN_DIR}/etc/fonts/fonts.conf'
   echo 'LADSPA_PATH=${SHARUN_DIR}/share/ladspa'
+  echo 'ALSA_PLUGIN_DIR=${SHARUN_DIR}/lib/alsa-lib'
 } >> "$APPDIR/.env"
 
 ./quick-sharun --make-appimage

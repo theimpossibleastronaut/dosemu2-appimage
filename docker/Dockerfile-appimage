@@ -38,6 +38,11 @@ RUN pacman -Syu --noconfirm --needed \
         libslirp \
         libseccomp \
         alsa-lib \
+        # alsa-lib dlopens its pulse/pipewire backends from a compiled-in
+        # module dir; without them a host whose alsa config routes through
+        # PulseAudio gets an error and falls back to a busy hw device.
+        alsa-plugins \
+        pipewire-alsa \
         fluidsynth \
         ladspa \
         gpm \
