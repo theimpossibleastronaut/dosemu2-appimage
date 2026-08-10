@@ -153,7 +153,7 @@ export PATH_MAPPING="
   /usr/share/dosemu:\${SHARUN_DIR}/share/dosemu
   /usr/share/comcom64:\${SHARUN_DIR}/share/comcom64
   /usr/share/fdpp:\${SHARUN_DIR}/share/fdpp
-  /usr/lib/ao:\${SHARUN_DIR}/share/ao
+  /usr/share/soundfonts:\${SHARUN_DIR}/share/soundfonts
 "
 mkdir -p "$APPDIR/i386-pc-dj64/lib" "$APPDIR/share/fonts"
 cp -v "$DJ64_SYSROOT/lib/crt0.elf" "$APPDIR/i386-pc-dj64/lib/crt0.elf"
@@ -169,14 +169,10 @@ cp -av /usr/share/dosemu /usr/share/comcom64 /usr/share/fdpp "$APPDIR/share/"
 # is set below in the AppDir's .env.
 cp -av /usr/share/fonts/oldschool "$APPDIR/share/fonts/oldschool"
 
-# libao dlopens its output backends (alsa, pulse, oss) from a compiled-in
-# plugin dir rather than linking them, so an unbundled dir leaves the
-# libao plugin loading with no way to reach a sound device: "libao:
-# unable to open output device" on every start. Guarded because libao is
-# optional -- an older build-env image without it should still produce an
-# AppImage, just one without the libao plugin, rather than dying here.
-if [ -d /usr/lib/ao ]; then
-  cp -av /usr/lib/ao "$APPDIR/share/ao"
+# The soundfont the Dockerfile fetches, mapped above so fluidsynth's own
+# default path finds it. COPYRIGHT.txt has to travel with it.
+if [ -d /usr/share/soundfonts ]; then
+  cp -av /usr/share/soundfonts "$APPDIR/share/soundfonts"
 fi
 
 # ladspa's filter.so is dlopen()'d by dosemu2's sound-effects plugin

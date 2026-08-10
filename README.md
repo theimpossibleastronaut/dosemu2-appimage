@@ -101,20 +101,19 @@ is the part people find hard to do by hand:
 
 - **DOS:** fdpp, comcom64, dj64
 - **Video:** SDL3 with TrueType text, X11, terminal, console
-- **Sound:** ALSA, libao, FluidSynth, LADSPA
+- **Sound:** ALSA with the PulseAudio and PipeWire backends, FluidSynth
+  with a bundled soundfont, munt for MT-32, LADSPA
 - **Other:** slirp networking, keyboard maps, parallel port
 
-Three things are still missing:
+Two things are left out:
 
-- **munt**, the MT-32 synthesiser. Its library is not in the Arch
-  repositories, so the build cannot install it.
-- **A soundfont** for FluidSynth. Startup reports `soundfonts not found`
-  unless the host has one. A General MIDI soundfont is over 100 MB, more
-  than the rest of the AppImage together.
-- **libao output.** The plugin loads but reports `unable to open output
-  device`. ALSA still works.
+- **libao output.** It loads its backends from a fixed path in `/usr`
+  that an AppImage cannot supply, so the plugin could only ever report
+  `unable to open output device`. ALSA and SDL cover sound output.
+- **MT-32 ROMs.** munt is built in, but the ROM files are proprietary.
+  Point `$_munt_roms` in `dosemu.conf` at your own copies to use it.
 
-On kernels older than the headers dosemu2 was built against, startup also
+On kernels older than the headers dosemu2 was built against, startup
 logs `landlock_init() failed` and continues without the sandbox.
 
 ## License

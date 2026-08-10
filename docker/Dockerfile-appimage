@@ -15,14 +15,17 @@ FROM ${BASE}
 RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 
 # Build + runtime deps for dosemu2 and its toolchain, plus the
-# AppImage-bundling tools (patchelf/wget/zsync). Kept in sync with what
-# build-appimage.sh and the toolchain build below actually need.
-# autoconf-archive is a dj64dev makedepend (its AUR PKGBUILD lists it).
+# AppImage-bundling tools (patchelf/wget/zsync). autoconf-archive is a
+# dj64dev makedepend. The trailing -Rdd removes the 217 MB of mesa/LLVM
+# sdl3 drags in via libglvnd: build-appimage.sh puts mesa-nano in their
+# place before dosemu2 is configured. It has to be in this layer, since a
+# later RUN would grow the image rather than shrink it.
 RUN pacman -Syu --noconfirm --needed \
         base-devel \
         git \
         meson \
         ninja \
+        cmake \
         nasm \
         pkgconf \
         elfutils \
@@ -50,13 +53,15 @@ RUN pacman -Syu --noconfirm --needed \
         vde2 \
         libx11 \
         libxext \
-        # Without these the X (needs both mkfontdir and bdftopcf to build
-        # its fonts), libao and ieee1284 plugins each die in configure and
-        # never reach the bundle. munt is the one optional plugin still
-        # left out: libmt32emu is AUR-only.
+        # Without these the X plugin (which needs both mkfontdir and
+        # bdftopcf to build its fonts) and the ieee1284 one die in
+        # configure and never reach the bundle. libao is deliberately
+        # absent: it dlopens its backends from a compiled-in
+        # /usr/lib/ao/plugins-4 with no env override, so a bundled copy
+        # can never reach them and the plugin only ever printed "unable
+        # to open output device". alsa and sdl already cover output.
         xorg-mkfontscale \
         xorg-bdftopcf \
-        libao \
         libieee1284 \
         sdl3 \
         sdl3_ttf \
@@ -67,6 +72,7 @@ RUN pacman -Syu --noconfirm --needed \
         patchelf \
         wget \
         zsync \
+  && pacman -Rdd --noconfirm mesa llvm-libs \
   && rm -rf /var/cache/pacman/pkg/*
 
 # ---------------------------------------------------------------------------
@@ -196,5 +202,38 @@ RUN mkdir -p /root/libsearpc && cd /root/libsearpc \
  && make -j"$(nproc)" \
  && make install \
  && rm -rf /root/libsearpc
+
+# libmt32emu is AUR-only, so the munt (MT-32) plugin has no packaged
+# dependency to install. CMAKE_POLICY_VERSION_MINIMUM is needed because
+# munt still declares cmake_minimum_required(2.8.12), which cmake 4
+# refuses outright. The plugin only registers itself when the user points
+# $_munt_roms at MT-32 ROMs, which are proprietary and not shipped here,
+# so this costs a 375 KB library and adds no output for anyone else.
+ARG MUNT_REF=munt_2_8_2
+RUN git clone --depth 1 --branch "${MUNT_REF}" \
+        https://github.com/munt/munt.git /root/munt \
+ && cmake -S /root/munt/mt32emu -B /root/munt/build \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DBUILD_SHARED_LIBS=ON -Dlibmt32emu_BUILD_TESTING=FALSE \
+ && cmake --build /root/munt/build -j"$(nproc)" \
+ && cmake --install /root/munt/build \
+ && rm -rf /root/munt
+
+# Without a soundfont on the host, dosemu2 prints "soundfonts not found"
+# on every start and MIDI is silent. Vintage Dreams Waves is 314 KB; its
+# licence allows redistribution unmodified provided the copyright notice
+# travels with it, hence COPYRIGHT.txt. /usr/share/soundfonts/default.sf2
+# is both fluidsynth's compiled-in default and the first path dosemu2
+# looks in.
+ARG SOUNDFONT_REF=v2.4.6
+RUN mkdir -p /usr/share/soundfonts && cd /usr/share/soundfonts \
+ && sf=https://raw.githubusercontent.com/FluidSynth/fluidsynth/${SOUNDFONT_REF}/sf2 \
+ && wget -q "$sf/VintageDreamsWaves-v2.sf2" "$sf/COPYRIGHT.txt" \
+ && printf '%s  %s\n' \
+      52132b2b83994f0067d3a66b93b4f1b67d53ff8c0d3be90d39f23f92b4585cdd VintageDreamsWaves-v2.sf2 \
+      766f8b6f5716dae672ab3cab74c3d6e3ad452beb49cfef81c82b79970c2601d6 COPYRIGHT.txt \
+    | sha256sum -c - \
+ && ln -s VintageDreamsWaves-v2.sf2 default.sf2
 
 CMD ["/bin/bash", "-l"]
