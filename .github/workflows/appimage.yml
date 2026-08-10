@@ -204,7 +204,7 @@ jobs:
           # the newest asset with no prerelease filter. One stream keeps
           # both of those pointing at the build that was actually tested.
           tag: latest
-          name: dosemu2 AppImage ${{ env.VERSION }} (built ${{ env.BUILD_DATE }})
+          name: ${{ env.VERSION }}, built ${{ env.BUILD_DATE }}
           artifacts: "./out/*AppImage*"
           body: |
             AppImage of [dosemu2](https://github.com/dosemu2/dosemu2),
