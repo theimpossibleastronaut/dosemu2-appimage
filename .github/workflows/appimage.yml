@@ -192,7 +192,36 @@ jobs:
           # bundle under an identical version string, so without this the
           # release page looks untouched when it is not. The time is in
           # there because two rebuilds in one day is a normal thing to do.
-          echo "BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u '+%Y%m%d_%H%M')" >> "$GITHUB_ENV"
+          # Same shortening build-appimage.sh applies to the asset names,
+          # so the archive tag reads like the files under it.
+          echo "VERSION_SHORT=$(sed -E 's/-[0-9]{8}-[0-9]+-g/-g/' out/DOSEMU2_VERSION)" \
+            >> "$GITHUB_ENV"
+
+      # Before the rolling release, so "latest" ends up on that one.
+      - name: Archive this build under its own tag
+        uses: ncipollo/release-action@v1
+        with:
+          # "latest" keeps exactly one build's assets, which is what makes
+          # `head -1` safe for the installers that pick an asset by
+          # position. This is where the previous builds stay reachable.
+          tag: ${{ env.VERSION_SHORT }}
+          name: ${{ env.VERSION_SHORT }}-${{ env.BUILD_DATE }}
+          artifacts: "./out/*AppImage*"
+          body: |
+            Archived build of [dosemu2](https://github.com/dosemu2/dosemu2)
+            at commit
+            [`${{ env.DOSEMU2_COMMIT }}`](https://github.com/dosemu2/dosemu2/commit/${{ env.DOSEMU2_COMMIT }}).
+
+            The current build is on the
+            [`latest`](../../releases/latest) release. These AppImages do
+            not update themselves to this tag: their built-in update URL
+            resolves to whatever is marked latest.
+          allowUpdates: true
+          replacesArtifacts: true
+          removeArtifacts: false
+          makeLatest: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish release
         uses: ncipollo/release-action@v1
@@ -204,7 +233,7 @@ jobs:
           # the newest asset with no prerelease filter. One stream keeps
           # both of those pointing at the build that was actually tested.
           tag: latest
-          name: ${{ env.VERSION }}, built ${{ env.BUILD_DATE }}
+          name: ${{ env.VERSION_SHORT }}-${{ env.BUILD_DATE }}
           artifacts: "./out/*AppImage*"
           body: |
             AppImage of [dosemu2](https://github.com/dosemu2/dosemu2),
@@ -236,7 +265,9 @@ jobs:
           # build never overwrites the previous one by name. Clear the
           # release first, or old AppImages pile up and anything picking
           # an asset by position (An/AM's `head -1`) gets a stale one.
-          # Safe only because this one job uploads every arch at once.
+          # Safe only because this one job uploads every arch at once,
+          # and because the step above has already archived this build
+          # under its own tag — nothing is lost by clearing here.
           removeArtifacts: true
           replacesArtifacts: true
           omitBodyDuringUpdate: false
