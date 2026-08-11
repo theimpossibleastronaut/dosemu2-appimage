@@ -206,7 +206,7 @@ jobs:
           # `head -1` safe for the installers that pick an asset by
           # position. This is where the previous builds stay reachable.
           tag: ${{ env.VERSION_SHORT }}
-          name: ${{ env.VERSION_SHORT }}-${{ env.BUILD_DATE }}
+          name: ${{ env.VERSION_SHORT }}
           artifacts: "./out/*AppImage*"
           body: |
             Archived build of [dosemu2](https://github.com/dosemu2/dosemu2)
