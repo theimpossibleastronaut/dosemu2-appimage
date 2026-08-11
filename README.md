@@ -105,6 +105,11 @@ is the part people find hard to do by hand:
   with a bundled soundfont, munt for MT-32, LADSPA
 - **Other:** slirp networking, keyboard maps, parallel port
 
+MIDI plays through [GeneralUser
+GS](https://github.com/mrbumpy409/GeneralUser-GS), which the AppImage
+carries. If your system already has a soundfont, dosemu2 uses that one
+instead.
+
 Two things are left out:
 
 - **libao output.** It loads its backends from a fixed path in `/usr`

@@ -209,19 +209,20 @@ RUN git clone --depth 1 --branch "${MUNT_REF}" \
  && rm -rf /root/munt
 
 # Without a soundfont on the host, dosemu2 prints "soundfonts not found"
-# on every start and MIDI is silent. Vintage Dreams Waves is 314 KB; its
-# licence allows redistribution unmodified provided the copyright notice
-# travels with it, hence COPYRIGHT.txt. /usr/share/soundfonts/default.sf2
-# is both fluidsynth's compiled-in default and the first path dosemu2
-# looks in.
-ARG SOUNDFONT_REF=v2.4.6
+# on every start and MIDI is silent. GeneralUser GS is a real General MIDI
+# bank, which a 314 KB one is not: a reporter running Doom's General MIDI
+# against Vintage Dreams described it as sounding like a wristwatch. Its
+# licence permits use in software projects; LICENSE.txt ships with it.
+# build-appimage.sh maps this in as the *last* soundfont dosemu2 looks
+# for, so a host that has its own keeps using it.
+ARG SOUNDFONT_REF=684543d5e5efaef08d02be50dcda8d552478fa60
 RUN mkdir -p /usr/share/soundfonts && cd /usr/share/soundfonts \
- && sf=https://raw.githubusercontent.com/FluidSynth/fluidsynth/${SOUNDFONT_REF}/sf2 \
- && wget -q "$sf/VintageDreamsWaves-v2.sf2" "$sf/COPYRIGHT.txt" \
+ && sf=https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/${SOUNDFONT_REF} \
+ && wget -q "$sf/GeneralUser-GS.sf2" "$sf/documentation/LICENSE.txt" \
  && printf '%s  %s\n' \
-      52132b2b83994f0067d3a66b93b4f1b67d53ff8c0d3be90d39f23f92b4585cdd VintageDreamsWaves-v2.sf2 \
-      766f8b6f5716dae672ab3cab74c3d6e3ad452beb49cfef81c82b79970c2601d6 COPYRIGHT.txt \
+      9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe GeneralUser-GS.sf2 \
+      7b32efefdf95ce38a043799f0659853ddc00fbaa14d8c50f0aca16b9b8b405be LICENSE.txt \
     | sha256sum -c - \
- && ln -s VintageDreamsWaves-v2.sf2 default.sf2
+ && ln -s GeneralUser-GS.sf2 default.sf2
 
 CMD ["/bin/bash", "-l"]

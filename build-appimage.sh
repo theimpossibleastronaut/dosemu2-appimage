@@ -116,7 +116,7 @@ export PATH_MAPPING="
   /usr/share/dosemu:\${SHARUN_DIR}/share/dosemu
   /usr/share/comcom64:\${SHARUN_DIR}/share/comcom64
   /usr/share/fdpp:\${SHARUN_DIR}/share/fdpp
-  /usr/share/soundfonts:\${SHARUN_DIR}/share/soundfonts
+  /usr/share/sounds/sf2/FluidR3_GM.sf2:\${SHARUN_DIR}/share/soundfonts/default.sf2
 "
 mkdir -p "$APPDIR/i386-pc-dj64/lib" "$APPDIR/share/fonts"
 cp -v "$DJ64_SYSROOT/lib/crt0.elf" "$APPDIR/i386-pc-dj64/lib/crt0.elf"
@@ -129,8 +129,10 @@ cp -av /usr/share/dosemu /usr/share/comcom64 /usr/share/fdpp "$APPDIR/share/"
 # at a self-contained config listing only these.
 cp -av /usr/share/fonts/oldschool "$APPDIR/share/fonts/oldschool"
 
-# The soundfont the Dockerfile fetches, mapped above so fluidsynth's own
-# default path finds it. COPYRIGHT.txt has to travel with it.
+# The soundfont the Dockerfile fetches. It is mapped onto the *last* entry
+# of dosemu2's search list (mid_o_flus.c) rather than the first, so a host
+# with its own soundfont still wins and only a host with none falls back to
+# the bundled one. LICENSE.txt has to travel with it.
 if [ -d /usr/share/soundfonts ]; then
   cp -av /usr/share/soundfonts "$APPDIR/share/soundfonts"
 fi
