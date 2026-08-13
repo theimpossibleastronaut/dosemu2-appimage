@@ -56,12 +56,11 @@ VERSION_SHORT=$(printf '%s\n' "$VERSION" | sed -E 's/-[0-9]{8}-[0-9]+-g/-g/')
 # --- bundle with sharun and pack the AppImage ------------------------------
 cd "$WORKSPACE"
 
-# The SDL3 plugin renders through OpenGL, so mesa has to be bundled;
-# --add-common (implies --add-mesa) supplies pkgforge-dev's nano mesa/LLVM
-# and icu stub instead of the stock ones, keeping every gallium driver plus
-# the softpipe fallback for hosts with no GPU. pacman -Syu first because
-# get-debloated-pkgs resolves its own `pacman -U` deps against the image's
-# baked-in DB, and a stale one 404s against already-pruned mirrors.
+# --add-common swaps pkgforge-dev's slimmer builds (icu stub, nano mesa/LLVM)
+# in for the stock ones before the library closure is walked. pacman -Syu
+# first because get-debloated-pkgs resolves its own `pacman -U` deps against
+# the image's baked-in DB, and a stale one 404s against already-pruned
+# mirrors.
 pacman -Syu --noconfirm
 wget --retry-connrefused --tries=30 "$DEBLOAT_PKGS" -O ./get-debloated-pkgs
 chmod +x ./get-debloated-pkgs
@@ -90,9 +89,9 @@ export ICON="$WORKSPACE/dosemu.png"
 export DESKTOP="$WORKSPACE/dosemu2.desktop"
 export OUTPATH
 export OUTNAME="dosemu2-$ARCH-$VERSION_SHORT.AppImage"
-# dosemu2's SDL3 plugin renders accelerated by default; keep OpenGL in
-# the bundle (same reasoning as Dealer's Choice's AnyLinux build).
-export DEPLOY_OPENGL=1
+# No DEPLOY_OPENGL: neither SDL plugin calls GL, and SDL3 opens it lazily
+# rather than as DT_NEEDED, so it falls back to software rendering where
+# there is none -- tested in a container with no GL installed.
 
 # gh-releases-zsync "latest" resolves against whatever GitHub marks as the
 # Latest Release, not a fixed tag, and an AppImage bakes this string in for
