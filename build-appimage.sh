@@ -39,7 +39,10 @@ git checkout "$DOSEMU2_REF"
 DOSEMU2_COMMIT=$(git rev-parse HEAD)
 
 ./autogen.sh
-./configure --prefix=/usr
+# --sysconfdir=/etc, not autoconf's /usr/etc default: dosemu2 reads its
+# global config from SYSCONFDIR/dosemu/dosemu.conf, and /usr/etc exists on
+# no host, so edits to the file every distro ships were silently ignored.
+./configure --prefix=/usr --sysconfdir=/etc
 make -j"$(nproc)"
 make install
 
