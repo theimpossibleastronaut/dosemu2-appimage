@@ -1,4 +1,4 @@
-name: AppImage Build Image CI
+name: Publish build-env image
 
 # Builds the build-environment image that appimage.yml runs
 # build-appimage.sh inside (Arch + dosemu2's from-source toolchain). Each
