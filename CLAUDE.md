@@ -106,6 +106,20 @@ Verified in a container with no GL libraries at all. Saves ~8 MB.
 - **Toolchain pins are duplicated** between `docker/Dockerfile-appimage`
   and `dosemu2-container`'s `Dockerfile.02-binutils` / `.03-toolchain`.
   Nothing enforces the match.
+- **OpenMT32 needs both files, and the sfz is the gate.** `$_omt_sfz_path`
+  is what makes the fluidsynth plugin register as MT-32 capable
+  (`mt32_scrub`); with only `$_fluid_sfont_mt32` set the soundfont loads
+  and the log still says `MIDI: unsupported synth mode mt32`. Neither file
+  is bundled — both come from the `stsp/openmt32_sf` release, which has no
+  license file. Andy's copies are in `~/.dosemu/openmt32/`.
+- **The MT-32 leaves MIDI channel 1 unassigned**, as the hardware does: the
+  sfz's `mt32_init_system` maps parts to channels 2-10. A test that plays
+  on channel 1 renders silence, and that is correct, not a bug.
+- **munt is going away upstream.** stsp said so in discussion #2967 on
+  2026-08-30: it is Fedora-only today and he intends to disable it there
+  too, with OpenMT32 replacing it. When that lands, the libmt32emu build
+  stage in `docker/Dockerfile-appimage` and the four munt references in
+  the README (including the `$_munt_roms` section) all become dead.
 
 ## Reading dosemu2's source
 
