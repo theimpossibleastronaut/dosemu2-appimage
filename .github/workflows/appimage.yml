@@ -2,14 +2,21 @@ name: Build dosemu2 AppImage
 
 # Builds the AppImage from a *deliberately chosen* dosemu2 commit, never
 # automatically: dosemu2's devel branch moves constantly and a rebuild per
-# push would republish "latest" with untested upstream code. Dispatch this
-# workflow with the ref you want.
+# push would republish "latest" with untested upstream code.
 #
-# Pushes and PRs build and smoke-test against the sha in the DOSEMU2_REF
-# file and publish nothing, so a broken build script is caught. That file
-# is also how a contributor proposes a newer dosemu2: edit it, open a PR,
-# and CI builds and smoke-tests both arches against the proposed sha.
-# Merging it does not release anything — publishing is still a dispatch.
+# Two ways to publish, both deliberate:
+#   - push to trunk with "[publish]" in the commit message
+#   - dispatch this workflow, optionally with a ref to build
+#
+# Everything else — pushes without the marker, and every PR — builds and
+# smoke-tests against the sha in the DOSEMU2_REF file and publishes
+# nothing, so a broken build script is still caught. That file is also how
+# a contributor proposes a newer dosemu2: edit it, open a PR, and CI
+# builds both arches against the proposed sha. Merging it releases nothing
+# unless the merge commit carries the marker.
+#
+# The marker is read from the push's *last* commit, so on a multi-commit
+# push it goes in the one at the tip.
 
 on:
   workflow_dispatch:
@@ -169,10 +176,20 @@ jobs:
 
   publish:
     needs: build
-    # Dispatch only. Pushes and PRs build and smoke-test, so a broken
-    # build script is caught, but publishing "latest" stays a deliberate
-    # act with a chosen dosemu2 commit behind it.
-    if: github.event_name == 'workflow_dispatch' && inputs.publish != false
+    # A dispatch, or a trunk push whose tip commit says "[publish]".
+    # Publishing "latest" stays a deliberate act either way; the marker is
+    # what separates a release from an ordinary push, so a PR merge that
+    # bumps DOSEMU2_REF does not release on its own. The branch is checked
+    # as well as the event: `on.push` already restricts this to trunk, and
+    # the guard keeps that true if another trigger is ever added.
+    #
+    # `contains()` here is evaluated by the expression engine, never by a
+    # shell, so the commit message cannot inject anything.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish != false)
+      || (github.event_name == 'push'
+      && github.ref == 'refs/heads/trunk'
+      && contains(github.event.head_commit.message, '[publish]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
