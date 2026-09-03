@@ -35,10 +35,13 @@ single screenshot cannot tell a correct frame from one phase of a flicker.
 
 ## Releases
 
-Dispatch-only. Pushes build and smoke-test both arches and publish
-nothing; Actions → Build dosemu2 AppImage → Run workflow publishes.
+Never automatic. Two ways to publish: a trunk push whose *tip* commit
+message contains `[publish]`, or Actions → Build dosemu2 AppImage → Run
+workflow. Everything else — pushes without the marker, and every PR —
+builds and smoke-tests both arches against the sha in `DOSEMU2_REF` and
+publishes nothing.
 
-Each dispatch writes two releases: the rolling `latest` (one build's
+Each publish writes two releases: the rolling `latest` (one build's
 assets, because AM's install script does `head -1` over the asset list)
 and a per-commit archive tagged `2.0pre9-dev-g<sha>`.
 
@@ -100,7 +103,7 @@ Verified in a container with no GL libraries at all. Saves ~8 MB.
   refuses a substitute.
 - **X needs two packages**, gated one after the other: `xorg-mkfontscale`,
   then `xorg-bdftopcf`.
-- **The build-env image must be republished before a dispatch that depends
+- **The build-env image must be republished before a build that depends
   on a Dockerfile change.** `appimage.yml` now builds the image in-job when
   the event's own diff touches the Dockerfile.
 - **Toolchain pins are duplicated** between `docker/Dockerfile-appimage`
