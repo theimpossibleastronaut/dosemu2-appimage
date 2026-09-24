@@ -104,8 +104,9 @@ Verified in a container with no GL libraries at all. Saves ~8 MB.
 - **X needs two packages**, gated one after the other: `xorg-mkfontscale`,
   then `xorg-bdftopcf`.
 - **The build-env image must be republished before a build that depends
-  on a Dockerfile change.** `appimage.yml` now builds the image in-job when
-  the event's own diff touches the Dockerfile.
+  on a Dockerfile change.** `appimage.yml` builds the image in-job when a
+  push or PR diff touches the Dockerfile. A dispatch has no diff, so it
+  pulls the published image, stale or not.
 - **Toolchain pins are duplicated** between `docker/Dockerfile-appimage`
   and `dosemu2-container`'s `Dockerfile.02-binutils` / `.03-toolchain`.
   Nothing enforces the match.

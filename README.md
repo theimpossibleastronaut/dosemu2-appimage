@@ -38,14 +38,14 @@ can install it (`am -i appimageupdatetool`).
 
 ## Configuration
 
-dosemu2 reads `/etc/dosemu/dosemu.conf` first, then `~/.dosemurc`. The
-AppImage ships neither, so it uses whatever is on the host and your
-settings survive an update.
+dosemu2 reads `/etc/dosemu/dosemu.conf` first, then
+`~/.dosemu/dosemurc`. The AppImage ships neither, so it uses whatever is
+on the host and your settings survive an update.
 
 ## Build locally
 
 You need Docker. First build the build environment — Arch, the bundled
-soundfont, and these, each compiled from a pinned commit:
+soundfont, and these, each compiled from a pinned commit or tag:
 
 - binutils
 - thunk_gen
@@ -76,13 +76,16 @@ the exact commit it came from.
 
 ## Proposing a newer dosemu2
 
-The `DOSEMU2_REF` file in the repository root holds the dosemu2 commit
-the AppImage is built from. To propose a newer one, edit that file and
+The `DOSEMU2_REF` file in the repository root sets the dosemu2 commit
+that CI builds and tests. To propose a newer one, edit that file and
 open a pull request. CI then builds and smoke-tests both architectures
 against the commit you put there, and publishes nothing.
 
-Releases stay manual. A maintainer runs the workflow from the Actions
-tab with the commit to publish.
+Releases are never automatic. A maintainer publishes in one of two ways:
+
+- pushes to `trunk` with `[publish]` in the message of the last commit
+  pushed
+- runs the workflow from the Actions tab with the commit to publish
 
 ## How it works
 
@@ -115,8 +118,7 @@ configuration pointing at the two bundled fonts.
 
 ## What is included
 
-dosemu2 is built with every optional plugin its dependencies allow. That
-is the part people find hard to do by hand:
+dosemu2 is built with every optional plugin its dependencies allow:
 
 - **DOS:** fdpp, comcom64, dj64
 - **Video:** SDL3 with TrueType text, X11, terminal, console
@@ -126,8 +128,17 @@ is the part people find hard to do by hand:
 
 MIDI plays through [GeneralUser
 GS](https://github.com/mrbumpy409/GeneralUser-GS), which the AppImage
-carries. If your system already has a soundfont, dosemu2 uses that one
-instead.
+carries. If your system has a soundfont in one of the places dosemu2
+searches, such as `/usr/share/soundfonts/default.sf2`, dosemu2 uses that
+one instead. For a soundfont anywhere else, set `$_fluid_sfont` in
+`~/.dosemu/dosemurc`:
+
+```
+$_fluid_sfont = "~/.sf2/mysoundfont.sf2"
+```
+
+With a portable home (a `<name>.AppImage.home` directory next to the
+AppImage), `~` means that directory, not your real home.
 
 Two things are left out:
 

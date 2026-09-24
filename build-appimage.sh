@@ -6,7 +6,7 @@
 #
 # Meant to run inside docker/Dockerfile-appimage's build-env image (Arch base
 # + dosemu2's toolchain -- binutils, thunk_gen, fdpp, smallerc, djstub,
-# dj64dev, comcom64, libsearpc -- all prebuilt to /usr, see appimage.yml).
+# dj64dev, comcom64, libsearpc, libmt32emu -- all prebuilt to /usr).
 # This script clones dosemu2 itself, builds it from source, installs it into
 # the system /usr, then bundles the installed binary with quick-sharun.
 
@@ -149,7 +149,7 @@ cp -av /usr/lib/ladspa "$APPDIR/share/ladspa"
 # config routed through PulseAudio finds nothing and falls back to a hw
 # device the sound server already owns. Bundle the pulse/pipewire modules
 # (quick-sharun deploys the rest of the dir alongside them) and point
-# ALSA_PLUGIN_DIR at them, set in .env below. Guarded like libao above.
+# ALSA_PLUGIN_DIR at them, set in .env below.
 ALSA_MODULES=
 for m in conf_pulse pcm_pulse ctl_pulse pcm_pipewire; do
   if [ -e "/usr/lib/alsa-lib/libasound_module_$m.so" ]; then
